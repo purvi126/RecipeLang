@@ -77,16 +77,15 @@ Choose a recipe from the example menu and press **Compile + Optimize** or `F5`.
 - **Timeline** explains why each step is running, waiting or complete.
 - **Resources** shows which step occupies each resource unit during playback.
 
-<table>
-  <tr>
-    <td><img src="docs/images/graph.png" alt="Clickable dependency graph"></td>
-    <td><img src="docs/images/scheduler.png" alt="Scheduling strategy comparison"></td>
-  </tr>
-  <tr>
-    <td align="center">Dependency graph</td>
-    <td align="center">Scheduling comparison</td>
-  </tr>
-</table>
+### Reading the visualizations
+
+- In **Resources**, time runs left to right in minutes. Each row is one available resource unit; a colored bar shows which step holds it and for how long.
+- In **Dependency DAG**, stages run left to right. Each arrow points from a prerequisite to the step that must wait for it. Red nodes and arrows mark the critical path; amber marks the selected step.
+- In **Scheduler**, the top table compares completion times. The lower table shows the chosen start/end times, resources and dependencies.
+
+![Clickable dependency graph with stages, direction and legend](docs/images/graph.png)
+
+![Scheduling strategy and final schedule comparison](docs/images/scheduler.png)
 
 ## Scheduling
 
@@ -100,7 +99,7 @@ For recipes with up to eight steps, bounded event-time search attempts to prove 
 python -m unittest discover -s tests -v
 ```
 
-The suite contains **66 tests** covering compiler phases, scheduling, validation, exports, simulation, CLI behavior and real Tkinter interactions.
+The suite contains **67 tests** covering compiler phases, scheduling, validation, exports, simulation, CLI behavior and real Tkinter interactions.
 
 ## Project layout
 
