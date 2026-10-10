@@ -76,7 +76,7 @@ CLI: `python3 recipelang.py examples/demo.recipe`.
 ## Verification
 
 Run `python3 -m unittest discover -s tests -v` (or the Windows command above).
-The 47 tests include original compatibility/export checks, independent minute-grid
+The 49 tests include original compatibility/export checks, Windows CLI encoding and JSON export checks, independent minute-grid
 exhaustive comparisons on 16 seeded small recipes, capacity bounds, larger-recipe
 priority improvements, waiting reasons, and real Tk checks for staged output,
 editor diagnostics, graph fit/zoom, and playback controls. Tk tests skip when a

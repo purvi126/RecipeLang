@@ -447,7 +447,8 @@ def main():
     args = ap.parse_args()
     try:
         with open(args.file, encoding='utf-8') as f: result = compile_recipe(f.read())
-        for phase in result['phases']: print('✓', phase)
+        # ASCII status markers also work with redirected Windows cp1252 output.
+        for phase in result['phases']: print('OK', phase)
         if args.tokens: print('\nTOKENS:', json.dumps(result['tokens'], indent=2))
         if args.ast: print('\nAST:', json.dumps(result['ast'], indent=2))
         if args.ir: print('\nIR:', json.dumps(result['ir'], indent=2))
