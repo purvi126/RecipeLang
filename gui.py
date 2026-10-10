@@ -1,5 +1,6 @@
 """RecipeLang visual compiler workbench. Run: python3 gui.py"""
 import tkinter as tk
+import math
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 from collections import defaultdict
@@ -10,6 +11,19 @@ from simulation import next_event, simulation_state, resource_lanes
 
 ROOT = Path(__file__).resolve().parent
 PALETTE = ('#4f46e5', '#0891b2', '#16a34a', '#d97706', '#be185d', '#7c3aed')
+
+
+def time_ticks(maximum, target=8):
+    """Return human-friendly minute ticks while always showing the finish time."""
+    maximum = max(1, maximum)
+    rough = maximum / target
+    power = 10 ** math.floor(math.log10(rough)) if rough else 1
+    step = next(multiplier * power for multiplier in (1, 2, 5, 10)
+                if multiplier * power >= rough)
+    ticks = list(range(0, maximum + 1, max(1, round(step))))
+    if ticks[-1] != maximum:
+        ticks.append(maximum)
+    return ticks
 
 class App(tk.Tk):
     def __init__(self):
@@ -60,6 +74,7 @@ class App(tk.Tk):
         self.bind('<Control-Shift-S>', lambda e: self.save_as())
         self.bind('<Control-o>', lambda e: self.open_file())
         pan = ttk.Panedwindow(self, orient='horizontal')
+        self.main_pane = pan
         pan.pack(fill='both', expand=True, padx=8, pady=5)
         left, right = ttk.Frame(pan), ttk.Frame(pan)
         pan.add(left, weight=2)
@@ -423,19 +438,30 @@ class App(tk.Tk):
         self.draw_resources()
         if not self.result: return
         slots = self.result['schedule']['slots']; max_t = max(1, self.result['schedule']['optimized_minutes'])
-        w = max(670, c.winfo_width()); x0 = 165; pw = max(400, w-x0-45); rh = 46
-        for t in range(0, max_t+1, max(1, (max_t+9)//10)):
+        w = max(760, c.winfo_width()); x0 = 190; pw = max(460, w-x0-45); rh = 54
+        axis_y, first_y = 56, 78
+        c.create_text(8, 16, anchor='w', text='TASK SCHEDULE', font=('Arial', 12, 'bold'), fill='#172033')
+        c.create_text(x0+pw/2, 16, text='TIME (MINUTES) →', font=('Arial', 10, 'bold'), fill='#334155')
+        c.create_text(8, axis_y, anchor='w', text='COOKING STEP', font=('Arial', 9, 'bold'), fill='#475569')
+        c.create_line(x0, axis_y, x0+pw, axis_y, fill='#94a3b8', width=2, arrow='last')
+        for t in time_ticks(max_t):
             x = x0 + t/max_t*pw
-            c.create_line(x, 30, x, 65+len(slots)*rh, fill='#e2e8f0')
-            c.create_text(x, 16, text=str(t), fill='#64748b')
+            c.create_line(x, axis_y, x, first_y+len(slots)*rh, fill='#dbe3ed', dash=(2, 3))
+            c.create_text(x, axis_y-12, text=f'{t} min', fill='#475569', font=('Arial', 8))
         for i, slot in enumerate(slots):
-            y = 46+i*rh; x1 = x0+slot['start']/max_t*pw; x2 = x0+slot['end']/max_t*pw
-            c.create_text(8, y+14, anchor='w', text=slot['name'], font=('Arial', 10))
-            c.create_rectangle(x1, y, x2, y+29, fill=PALETTE[i%len(PALETTE)], outline='')
-            c.create_text((x1+x2)/2, y+14, text=f'{slot["start"]}–{slot["end"]}', fill='white', font=('Arial', 9, 'bold'))
+            y = first_y+i*rh; x1 = x0+slot['start']/max_t*pw; x2 = x0+slot['end']/max_t*pw
+            if i % 2 == 0:
+                c.create_rectangle(0, y-7, w, y+40, fill='#f8fafc', outline='')
+            c.create_text(8, y+9, anchor='w', text=slot['name'], font=('Arial', 10, 'bold'), fill='#172033')
+            resources = ', '.join(slot['uses']) or 'no resource'
+            c.create_text(8, y+27, anchor='w', text=resources, font=('Arial', 8), fill='#64748b')
+            c.create_rectangle(x1, y, max(x1+3, x2), y+34, fill=PALETTE[i%len(PALETTE)], outline='', tags=('timeline_bar',))
+            c.create_text((x1+x2)/2, y+17, text=f'{slot["start"]}–{slot["end"]} min', fill='white', font=('Arial', 9, 'bold'))
         x = x0 + self.minute/max_t*pw
-        c.create_line(x, 28, x, 65+len(slots)*rh, fill='#ef4444', width=3)
-        c.configure(scrollregion=(0, 0, w, max(400, 90+len(slots)*rh)))
+        c.create_line(x, axis_y-5, x, first_y+len(slots)*rh, fill='#ef4444', width=3, tags=('now_line',))
+        c.create_text(min(x+6, x0+pw-58), first_y+len(slots)*rh+8, anchor='nw',
+                      text=f'NOW: {self.minute} min', fill='#b91c1c', font=('Arial', 9, 'bold'), tags=('now_label',))
+        c.configure(scrollregion=(0, 0, w, max(400, 115+len(slots)*rh)))
         self.update_clock()
 
     def draw_resources(self):
@@ -449,33 +475,60 @@ class App(tk.Tk):
         unassigned = [s for s in slots if not s['uses']]
         # Resource-free tasks need distinct rows: they may overlap each other.
         rows += [{'resource': 'No resource: ' + s['name'], 'unit': None, 'slots': [s]} for s in unassigned]
-        width = max(680, c.winfo_width())
-        x0, rh = 190, 60
-        plot = max(420, width-x0-35)
+        width = max(760, c.winfo_width())
+        x0, rh = 205, 64
+        plot = max(470, width-x0-45)
         finish = max(1, self.result['schedule']['optimized_minutes'])
         colors = {s['name']: PALETTE[i % len(PALETTE)] for i, s in enumerate(slots)}
-        for t in sorted(set(range(0, finish+1, max(1, (finish+9)//10))) | {finish}):
+        axis_y, first_y = 68, 90
+        c.create_text(8, 17, anchor='w', text='RESOURCE UTILIZATION', font=('Arial', 12, 'bold'), fill='#172033')
+        c.create_text(8, 39, anchor='w', text='Capacity is split into individual units', font=('Arial', 9), fill='#64748b')
+        c.create_text(x0+plot/2, 17, text='TIME (MINUTES) →', font=('Arial', 10, 'bold'), fill='#334155')
+        c.create_text(8, axis_y, anchor='w', text='RESOURCE UNIT', font=('Arial', 9, 'bold'), fill='#475569')
+        c.create_line(x0, axis_y, x0+plot, axis_y, fill='#94a3b8', width=2, arrow='last')
+        for t in time_ticks(finish):
             x = x0 + t/finish*plot
-            c.create_line(x, 30, x, 45+len(rows)*rh, fill='#e2e8f0')
-            c.create_text(x, 15, text=f'{t}', fill='#64748b')
+            c.create_line(x, axis_y, x, first_y+len(rows)*rh, fill='#dbe3ed', dash=(2, 3))
+            c.create_text(x, axis_y-12, text=f'{t} min', fill='#475569', font=('Arial', 8))
         for i, row in enumerate(rows):
-            y = 45+i*rh
-            label = row['resource'] + (f' #{row["unit"]}' if row['unit'] is not None else '')
-            c.create_text(8, y+16, anchor='w', width=175, text=label, font=('Arial', 10, 'bold'))
+            y = first_y+i*rh
+            if i % 2 == 0:
+                c.create_rectangle(0, y-9, width, y+44, fill='#f8fafc', outline='')
+            capacity = self.result['ast']['resources'].get(row['resource'])
+            label = (f'{row["resource"]} • unit {row["unit"]} of {capacity}'
+                     if row['unit'] is not None else row['resource'])
+            c.create_text(8, y+17, anchor='w', width=190, text=label, font=('Arial', 10, 'bold'), fill='#172033')
             if not row['slots']:
                 c.create_text(x0+10, y+16, anchor='w', text='Unused', fill='#64748b')
             for slot in row['slots']:
                 x1, x2 = x0+slot['start']/finish*plot, x0+slot['end']/finish*plot
                 tags = ('resource_slot', 'task:' + slot['name'])
-                c.create_rectangle(x1, y, max(x1+2, x2), y+34, fill=colors[slot['name']], outline='', tags=tags)
-                if x2-x1 > 45:
-                    # Keep labels inside their bars; the full name is in the task timeline.
-                    limit = max(3, int((x2-x1-8)/7))
+                c.create_rectangle(x1, y, max(x1+2, x2), y+38, fill=colors[slot['name']], outline='', tags=tags)
+                span = x2-x1
+                if span > 58:
+                    limit = max(3, int((span-8)/7))
                     name = slot['name'] if len(slot['name']) <= limit else slot['name'][:limit-1] + '…'
-                    c.create_text((x1+x2)/2, y+17, text=name, fill='white', font=('Arial', 9), tags=tags)
+                    c.create_text((x1+x2)/2, y+12, text=name, fill='white', font=('Arial', 9, 'bold'), tags=tags)
+                    c.create_text((x1+x2)/2, y+28, text=f'{slot["start"]}–{slot["end"]} min', fill='white', font=('Arial', 8), tags=tags)
         x = x0+self.minute/finish*plot
-        c.create_line(x, 28, x, 45+len(rows)*rh, fill='#ef4444', width=3)
-        c.configure(scrollregion=(0, 0, width, max(200, 65+len(rows)*rh)))
+        c.create_line(x, axis_y-4, x, first_y+len(rows)*rh, fill='#ef4444', width=3, tags=('now_line',))
+        legend_y = first_y+len(rows)*rh+12
+        c.create_text(8, legend_y, anchor='nw', text='STEP COLORS', font=('Arial', 9, 'bold'), fill='#475569')
+        lx = 135
+        for slot in slots:
+            item_width = 27 + len(slot['name'])*7
+            if lx + item_width > width - 24:
+                legend_y += 21
+                lx = 135
+            c.create_rectangle(lx, legend_y, lx+12, legend_y+12, fill=colors[slot['name']], outline='')
+            c.create_text(lx+17, legend_y+6, anchor='w', text=slot['name'], font=('Arial', 8), fill='#334155')
+            lx += item_width
+        if lx + 145 > width - 24:
+            legend_y += 21
+            lx = 135
+        c.create_line(lx+7, legend_y-2, lx+7, legend_y+14, fill='#ef4444', width=3)
+        c.create_text(lx+15, legend_y+6, anchor='w', text=f'current time ({self.minute} min)', font=('Arial', 8), fill='#b91c1c')
+        c.configure(scrollregion=(0, 0, width, max(240, legend_y+42)))
         usage = []
         for resource, capacity in self.result['ast']['resources'].items():
             count = sum(resource in s['uses'] and s['start'] <= self.minute < s['end'] for s in slots)
@@ -538,26 +591,45 @@ class App(tk.Tk):
         groups = defaultdict(list)
         for name, depth in levels.items(): groups[depth].append(name)
         # Keep layout in stable logical coordinates; resizing must not undo zoom.
-        width = max(300, 210*len(groups)+70)
-        height = max(200, max(map(len, groups.values()))*110+90)
+        width = max(420, 230*len(groups)+70)
+        height = max(280, max(map(len, groups.values()))*125+165)
         self.graph_size = (width, height)
         pos = {}
         for depth, names in groups.items():
             for i, name in enumerate(names):
-                pos[name] = (105+depth*210, (height/(len(names)+1))*(i+1))
+                pos[name] = (120+depth*230, 95+(i+1)*(height-150)/(len(names)+1))
         critical = set(data.get('critical_path_nodes', []))
+        c.create_text(12, 16, anchor='w', text='DEPENDENCY FLOW →', font=('Arial', 11, 'bold'), fill='#172033', tags=('graph_guide',))
+        c.create_text(12, 37, anchor='w', text='Arrow: prerequisite must finish before dependent step starts',
+                      font=('Arial', 8), fill='#475569', tags=('graph_guide',))
+        for depth in sorted(groups):
+            label = 'START — no prerequisites' if depth == 0 else f'STAGE {depth+1} — after prerequisites'
+            c.create_text(120+depth*230, 91, text=label, font=('Arial', 8, 'bold'), fill='#475569', tags=('stage_heading',))
         for a, b in edges:
             x1,y1 = pos[a]; x2,y2 = pos[b]
-            c.create_line(x1+70,y1,x2-70,y2,arrow='last',arrowshape=(12,14,6),fill='#dc2626' if a in critical and b in critical else '#64748b',width=3 if a in critical and b in critical else 2)
+            c.create_line(x1+82,y1,x2-82,y2,arrow='last',arrowshape=(12,14,6),fill='#dc2626' if a in critical and b in critical else '#64748b',width=3 if a in critical and b in critical else 2,tags=('dependency_edge',))
         for name, (x,y) in pos.items():
             tags = ('node', 'node:' + name)
-            c.create_rectangle(x-70,y-26,x+70,y+26,fill='#fef3c7' if name == self.selected_node else '#fee2e2' if name in critical else '#e0e7ff',outline='#dc2626' if name in critical else '#4338ca',width=3 if name in critical else 2,tags=tags)
-            c.create_text(x,y-7,text=name,font=('Arial',max(1, round(10*self.graph_zoom)),'bold'), width=135*self.graph_zoom,tags=tags)
-            c.create_text(x,y+12,text=f'{steps[name]["duration"]} min',font=('Arial',max(1, round(9*self.graph_zoom))),fill='#475569',tags=tags)
+            fill = '#fef3c7' if name == self.selected_node else '#fee2e2' if name in critical else '#e0e7ff'
+            outline = '#d97706' if name == self.selected_node else '#dc2626' if name in critical else '#4338ca'
+            c.create_rectangle(x-82,y-34,x+82,y+34,fill=fill,outline=outline,width=3 if name in critical or name == self.selected_node else 2,tags=tags)
+            c.create_text(x,y-16,text=name,font=('Arial',max(1, round(10*self.graph_zoom)),'bold'), width=156*self.graph_zoom,tags=tags)
+            c.create_text(x,y+2,text=f'{steps[name]["duration"]} min',font=('Arial',max(1, round(9*self.graph_zoom))),fill='#334155',tags=tags)
+            resources = ', '.join(steps[name]['uses']) or 'no resource'
+            c.create_text(x,y+20,text=resources,font=('Arial',max(1, round(8*self.graph_zoom))),fill='#64748b',tags=tags)
+        # Keep the key beside the title so it stays visible at every zoom level.
+        legend_y = 63
+        c.create_rectangle(12, legend_y-8, 27, legend_y+7, fill='#fee2e2', outline='#dc2626', width=2, tags=('graph_legend',))
+        c.create_text(33, legend_y, anchor='w', text='critical path', font=('Arial', 8), fill='#334155', tags=('graph_legend',))
+        c.create_rectangle(125, legend_y-8, 140, legend_y+7, fill='#e0e7ff', outline='#4338ca', width=2, tags=('graph_legend',))
+        c.create_text(146, legend_y, anchor='w', text='regular step', font=('Arial', 8), fill='#334155', tags=('graph_legend',))
+        c.create_rectangle(230, legend_y-8, 245, legend_y+7, fill='#fef3c7', outline='#d97706', width=2, tags=('graph_legend',))
+        c.create_text(251, legend_y, anchor='w', text='selected step', font=('Arial', 8), fill='#334155', tags=('graph_legend',))
         c.scale('all', 0, 0, self.graph_zoom, self.graph_zoom)
         for item in c.find_all():
             if c.type(item) == 'line':
-                c.itemconfigure(item, arrowshape=tuple(v*self.graph_zoom for v in (12,14,6)), width=max(1, 2*self.graph_zoom))
+                weight = 3 if c.itemcget(item, 'fill') == '#dc2626' else 2
+                c.itemconfigure(item, arrowshape=tuple(v*self.graph_zoom for v in (12,14,6)), width=max(1, weight*self.graph_zoom))
         c.configure(scrollregion=(0,0,width*self.graph_zoom,height*self.graph_zoom))
         self.zoom_note.configure(text=f'{self.graph_zoom:.0%} • drag to pan')
 

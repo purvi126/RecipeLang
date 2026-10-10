@@ -6,12 +6,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from gui import App, ROOT
+from gui import App, ROOT, time_ticks
 from recipelang import compile_recipe, RecipeError, Parser, lex, schedule, place_in_order, priority_order, topological, scheduling_metrics
 from simulation import resource_lanes
 
 
 class ExplanationTests(unittest.TestCase):
+    def test_time_ticks_are_readable_and_include_finish(self):
+        self.assertEqual(time_ticks(33), [0, 5, 10, 15, 20, 25, 30, 33])
+        self.assertEqual(time_ticks(4), [0, 1, 2, 3, 4])
+
     def test_cycle_arrows_follow_prerequisite_to_step(self):
         source = 'step a\n needs c\n duration 1 min\nend\nstep b\n needs a\n duration 1 min\nend\nstep c\n needs b\n duration 1 min\nend\n'
         with self.assertRaisesRegex(RecipeError, 'a -> b -> c -> a'):
@@ -194,6 +198,16 @@ class FileAndViewTests(unittest.TestCase):
         final = next(a.comparison.item(i, 'values') for i in a.comparison.get_children() if a.comparison.item(i, 'values')[0] == 'Final schedule')
         self.assertEqual(final[1], '33')
         self.assertTrue(a.resource_canvas.find_withtag('resource_slot'))
+        self.assertTrue(a.resource_canvas.find_withtag('now_line'))
+        self.assertTrue(a.timeline.find_withtag('timeline_bar'))
+        resource_text = [a.resource_canvas.itemcget(i, 'text') for i in a.resource_canvas.find_all()
+                         if a.resource_canvas.type(i) == 'text']
+        self.assertIn('TIME (MINUTES) →', resource_text)
+        a.notebook.select(a.tabs['Dependency DAG'])
+        a.update()
+        self.assertTrue(a.graph.find_withtag('stage_heading'))
+        self.assertTrue(a.graph.find_withtag('graph_legend'))
+        self.assertEqual(len(a.graph.find_withtag('dependency_edge')), 3)
         a.next_event()
         self.assertIn('At 5 min', a.resource_note.cget('text'))
         self.assertIn('cook: 0/1', a.resource_note.cget('text'))
