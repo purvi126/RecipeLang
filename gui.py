@@ -7,6 +7,7 @@ from pathlib import Path
 from collections import defaultdict
 from recipelang import compile_recipe, compile_stages, RecipeError
 from exporters import export_all
+from editor import SourceEditor
 
 ROOT = Path(__file__).resolve().parent
 PALETTE = ('#4f46e5', '#0891b2', '#16a34a', '#d97706', '#be185d', '#7c3aed')
@@ -46,14 +47,9 @@ class App(tk.Tk):
         pan.add(left, weight=2)
         pan.add(right, weight=5)
         ttk.Label(left, text='RECIPE SOURCE', font=('Arial', 11, 'bold')).pack(anchor='w', pady=(0, 4))
-        ef = ttk.Frame(left); ef.pack(fill='both', expand=True)
-        self.editor = tk.Text(ef, font=('DejaVu Sans Mono', 10), wrap='none', undo=True, tabs=('2c',))
-        sy = ttk.Scrollbar(ef, orient='vertical', command=self.editor.yview)
-        sx = ttk.Scrollbar(ef, orient='horizontal', command=self.editor.xview)
-        self.editor.configure(yscrollcommand=sy.set, xscrollcommand=sx.set)
-        ef.grid_rowconfigure(0, weight=1); ef.grid_columnconfigure(0, weight=1)
-        self.editor.grid(row=0, column=0, sticky='nsew'); sy.grid(row=0, column=1, sticky='ns'); sx.grid(row=1, column=0, sticky='ew')
-        self.editor.tag_configure('error', background='#fecaca')
+        self.source_editor = SourceEditor(left, self.source_changed)
+        self.source_editor.pack(fill='both', expand=True)
+        self.editor = self.source_editor.text
         self.notebook = ttk.Notebook(right); self.notebook.pack(fill='both', expand=True)
         self.tabs = {}
         for name in ('Timeline', 'Tokens', 'AST', 'Symbol table', 'Dependency DAG', 'Scheduler', 'Compiler phases'):
@@ -73,6 +69,9 @@ class App(tk.Tk):
         self.schedule_note.pack(anchor='w', padx=8, pady=8)
         self.phases = tk.Text(self.tabs['Compiler phases'], font=('DejaVu Sans Mono', 10), wrap='word', state='disabled')
         self.phases.pack(fill='both', expand=True, padx=7, pady=7)
+        self.phases.tag_configure('diagnostic', foreground='#b91c1c', underline=True)
+        self.phases.tag_bind('diagnostic', '<Enter>', lambda event: self.phases.configure(cursor='hand2'))
+        self.phases.tag_bind('diagnostic', '<Leave>', lambda event: self.phases.configure(cursor=''))
         self.phase_progress = ttk.Progressbar(self.tabs['Compiler phases'], maximum=8, mode='determinate')
         self.phase_progress.pack(fill='x', padx=7, pady=(0, 7))
         self.timeline.bind('<Configure>', lambda e: self.draw_timeline())
@@ -125,11 +124,32 @@ class App(tk.Tk):
         self.phases.configure(state='normal'); self.phases.delete('1.0', 'end')
         self.phases.insert('1.0', text); self.phases.configure(state='disabled')
 
+    def source_changed(self):
+        # A source edit invalidates both scheduled callbacks and old diagnostics.
+        self.pause()
+        if self.phase_job is not None:
+            self.after_cancel(self.phase_job)
+            self.phase_job = None
+        self.compiling = False
+        self.result = None
+        self.minute = 0
+        if hasattr(self, 'phases'):
+            self.set_phases('Source changed — compile to refresh results.')
+            self.phase_progress['value'] = 0
+            for table in (self.tokens, self.ast, self.symbols, self.schedule_table):
+                self.clear_table(table)
+            self.schedule_note.configure(text='')
+            self.stats.configure(text='Source changed — compile to refresh results.')
+            self.active.configure(text='')
+            self.draw_timeline(); self.draw_graph(); self.update_clock()
+
     @staticmethod
     def clear_table(table):
         for item in table.get_children(): table.delete(item)
 
     def compile(self):
+        # Flush Tk's modification flag before starting a fresh staged snapshot.
+        self.source_editor.changed()
         self.pause()
         if self.phase_job is not None:
             self.after_cancel(self.phase_job)
@@ -158,8 +178,11 @@ class App(tk.Tk):
             self.set_phases('\n'.join(self.phase_history + ['✗ ' + str(e)]))
             self.stats.configure(text='Compilation failed — see Compiler phases')
             if e.line:
-                self.editor.tag_add('error', f'{e.line}.0', f'{e.line}.end')
-                self.editor.see(f'{e.line}.0')
+                line = e.line
+                self.source_editor.go_to_error(line)
+                diagnostic_row = len(self.phase_history) + 1
+                self.phases.tag_add('diagnostic', f'{diagnostic_row}.0', f'{diagnostic_row}.end')
+                self.phases.tag_bind('diagnostic', '<Button-1>', lambda event, n=line: self.source_editor.go_to_error(n))
             self.draw_timeline(); self.draw_graph()
             return
         except StopIteration:
