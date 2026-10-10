@@ -154,13 +154,22 @@ def validate(recipe):
     for name, amount in consumed.items():
         ing = recipe.ingredients[name]
         if amount > ing.quantity * UNITS[ing.unit][1] + 1e-9:
-            raise RecipeError('Semantic', f'not enough {name}: need {amount:g} base units, have {ing.quantity * UNITS[ing.unit][1]:g}', ing.line)
-    state = {}
+            required = amount / UNITS[ing.unit][1]
+            raise RecipeError('Semantic',
+                f'not enough {name}: need {required:g} {ing.unit}, have {ing.quantity:g} {ing.unit}; '
+                f'short by {required-ing.quantity:g} {ing.unit}', ing.line)
+    state, trail = {}, []
     def visit(name):
-        if state.get(name) == 1: raise RecipeError('Semantic', f'cyclic dependency involving {name}', recipe.steps[name].line)
+        if state.get(name) == 1:
+            # Reverse the dependency walk so arrows follow prerequisite -> step,
+            # matching the graph drawn in the GUI.
+            cycle = list(reversed(trail[trail.index(name):] + [name]))
+            raise RecipeError('Semantic', 'cyclic dependency: ' + ' -> '.join(cycle), recipe.steps[name].line)
         if state.get(name) == 2: return
         state[name] = 1
+        trail.append(name)
         for dep in recipe.steps[name].needs: visit(dep)
+        trail.pop()
         state[name] = 2
     for name in recipe.steps: visit(name)
     return {'ingredients': {k: asdict(v) for k, v in recipe.ingredients.items()}, 'resources': recipe.resources,
@@ -341,14 +350,20 @@ def schedule(recipe):
     heuristic = place_in_order(recipe, order)
     metrics = scheduling_metrics(recipe)
     tested, chosen = 1, 'source_topological'
+    priority_results = [{'rule': chosen, 'minutes': max(s.end for s in heuristic)}]
     for rule in ('critical_path', 'least_slack', 'resource_pressure', 'longest_duration'):
         candidate = place_in_order(recipe, priority_order(recipe, metrics, rule))
+        priority_results.append({'rule': rule, 'minutes': max(s.end for s in candidate)})
         tested += 1
         if max(s.end for s in candidate) < max(s.end for s in heuristic):
             heuristic, chosen = candidate, rule
     slots = [asdict(s) for s in heuristic]
     method = f'priority portfolio earliest-feasible heuristic ({chosen})'
     optimal = max(s['end'] for s in slots) == metrics['lower_bound']
+    heuristic_minutes = max(s['end'] for s in slots)
+    exact_status = 'skipped_bound' if optimal else 'skipped_size'
+    reason = ('The schedule matches the proven lower bound.' if optimal else
+              'Exact search is limited to 8 steps; this is the best heuristic result, not a proven optimum.')
     states = 0
     if n <= 8 and not optimal:
         exact, states = exact_schedule(recipe, incumbent=slots)
@@ -356,8 +371,12 @@ def schedule(recipe):
             slots = exact
             method = 'exact event-time exhaustive search (provably optimal for this instance)'
             optimal = True
+            exact_status = 'proven_optimal'
+            reason = 'Exact event-time search completed and proved no shorter schedule exists.'
         else:
             method += ' (exact search exceeded state budget)'
+            exact_status = 'limit_reached'
+            reason = 'Exact search exceeded 120,000 states; the best heuristic is retained. Optimality is not proven.'
     baseline = sum(s.duration for s in recipe.steps.values())
     finish = max(s['end'] for s in slots)
     if finish == metrics['lower_bound']:
@@ -372,7 +391,9 @@ def schedule(recipe):
                 'remaining_path': metrics['remaining_path'][name], 'slack': metrics['slack'][name]
             } for name in order},
             'provably_optimal': optimal, 'exact_states_evaluated': states,
-            'priority_orders_evaluated': tested}
+            'priority_orders_evaluated': tested, 'priority_results': priority_results,
+            'selected_priority': chosen, 'heuristic_minutes': heuristic_minutes,
+            'exact_status': exact_status, 'optimality_reason': reason}
 
 
 def critical_path_nodes(recipe):

@@ -6,7 +6,7 @@ from collections import defaultdict
 from recipelang import compile_stages, RecipeError
 from exporters import export_all
 from editor import SourceEditor
-from simulation import next_event, simulation_state
+from simulation import next_event, simulation_state, resource_lanes
 
 ROOT = Path(__file__).resolve().parent
 PALETTE = ('#4f46e5', '#0891b2', '#16a34a', '#d97706', '#be185d', '#7c3aed')
@@ -28,37 +28,58 @@ class App(tk.Tk):
         self.playing = False
         self.after_id = None
         self.current_path = None
+        self.saved_source = ''
+        self.selected_node = None
+        self.protocol('WM_DELETE_WINDOW', self.close_file)
         style = ttk.Style(self)
         if 'clam' in style.theme_names(): style.theme_use('clam')
         style.configure('TNotebook.Tab', padding=(12, 8))
         bar = ttk.Frame(self, padding=8)
         bar.pack(fill='x')
-        for title, command in [('Open', self.open_file), ('Save', self.save_file), ('Compile + Optimize', self.compile),
-                               ('▶ Play', self.play), ('Ⅱ Pause', self.pause), ('Next minute', self.next_minute),
-                               ('Reset', self.reset), ('Export all', self.export_results)]:
+        for title, command in [('Open', self.open_file), ('Save', self.save_file), ('Save as', self.save_as),
+                               ('Compile + Optimize', self.compile), ('Export all', self.export_results)]:
             ttk.Button(bar, text=title, command=command).pack(side='left', padx=2)
         ttk.Label(bar, text='Speed:').pack(side='left', padx=(12, 2))
         self.speed = tk.StringVar(value='2×')
         ttk.Combobox(bar, textvariable=self.speed, values=['1×', '2×', '5×', '10×'], width=5, state='readonly').pack(side='left')
         self.clock = ttk.Label(bar, text='Simulation 00:00', font=('Arial', 11, 'bold'))
         self.clock.pack(side='right', padx=6)
+        example_bar = ttk.Frame(self, padding=(10, 0, 10, 5))
+        example_bar.pack(fill='x')
+        ttk.Label(example_bar, text='Example:').pack(side='left', padx=(0, 6))
+        self.example_paths = {p.relative_to(ROOT / 'examples').as_posix(): p
+                              for p in sorted((ROOT / 'examples').rglob('*.recipe'))}
+        self.example_name = tk.StringVar()
+        self.example_picker = ttk.Combobox(example_bar, textvariable=self.example_name,
+            values=list(self.example_paths), state='readonly', width=32)
+        self.example_picker.pack(side='left')
+        self.example_picker.bind('<<ComboboxSelected>>', self.load_example)
+        ttk.Label(example_bar, text='Choose a recipe, then Compile (F5). Error examples demonstrate diagnostics.').pack(side='left', padx=10)
+        self.bind('<F5>', lambda e: self.compile())
+        self.bind('<Control-s>', lambda e: self.save_file())
+        self.bind('<Control-Shift-S>', lambda e: self.save_as())
+        self.bind('<Control-o>', lambda e: self.open_file())
         pan = ttk.Panedwindow(self, orient='horizontal')
         pan.pack(fill='both', expand=True, padx=8, pady=5)
         left, right = ttk.Frame(pan), ttk.Frame(pan)
         pan.add(left, weight=2)
         pan.add(right, weight=5)
+        # Text widgets request a wide default size; reserve most space for results.
+        self.after_idle(lambda: pan.sashpos(0, max(260, int(pan.winfo_width() * .30))))
         ttk.Label(left, text='RECIPE SOURCE', font=('Arial', 11, 'bold')).pack(anchor='w', pady=(0, 4))
         self.source_editor = SourceEditor(left, self.source_changed)
         self.source_editor.pack(fill='both', expand=True)
         self.editor = self.source_editor.text
         self.notebook = ttk.Notebook(right); self.notebook.pack(fill='both', expand=True)
         self.tabs = {}
-        for name in ('Timeline', 'Tokens', 'AST', 'Symbol table', 'Dependency DAG', 'Scheduler', 'Compiler phases'):
+        for name in ('Timeline', 'Resources', 'Tokens', 'AST', 'Symbol table', 'Dependency DAG', 'Scheduler', 'Compiler phases'):
             tab = ttk.Frame(self.notebook); self.notebook.add(tab, text=name); self.tabs[name] = tab
         self.stats = ttk.Label(self.tabs['Timeline'], text='Compile a recipe to generate a schedule.', wraplength=800)
         self.stats.pack(anchor='w', padx=8, pady=6)
         simulation_bar = ttk.Frame(self.tabs['Timeline'])
         simulation_bar.pack(fill='x', padx=7)
+        for label, action in [('Play', self.play), ('Pause', self.pause), ('Reset', self.reset), ('Next minute', self.next_minute)]:
+            ttk.Button(simulation_bar, text=label, command=action).pack(side='left', padx=2)
         ttk.Button(simulation_bar, text='Next event', command=self.next_event).pack(side='left')
         ttk.Label(simulation_bar, text='Playback:').pack(side='left', padx=(10, 3))
         self.playback_mode = tk.StringVar(value='Events')
@@ -69,6 +90,17 @@ class App(tk.Tk):
         self.waiting = self.make_table(self.tabs['Timeline'], ('Step', 'State', 'Reason'))
         self.waiting.configure(height=5)
         self.waiting.column('Reason', width=430)
+        ttk.Label(self.tabs['Resources'], text='One row per resource unit. A step appears on every resource it holds.',
+                  padding=8).pack(anchor='w')
+        self.resource_canvas = self.make_canvas(self.tabs['Resources'])
+        self.resource_note = ttk.Label(self.tabs['Resources'], text='', padding=8, wraplength=750)
+        self.resource_note.pack(anchor='w')
+        resource_bar = ttk.Frame(self.tabs['Resources'], padding=6)
+        resource_bar.pack(fill='x')
+        ttk.Button(resource_bar, text='Play', command=self.play).pack(side='left')
+        ttk.Button(resource_bar, text='Pause', command=self.pause).pack(side='left', padx=4)
+        ttk.Button(resource_bar, text='Next event', command=self.next_event).pack(side='left')
+        ttk.Button(resource_bar, text='Reset', command=self.reset).pack(side='left', padx=4)
         self.tokens = self.make_table(self.tabs['Tokens'], ('Type', 'Value', 'Line', 'Column'))
         self.ast = ttk.Treeview(self.tabs['AST'], show='tree')
         self.ast.pack(fill='both', expand=True, padx=7, pady=7)
@@ -81,12 +113,24 @@ class App(tk.Tk):
         self.zoom_note = ttk.Label(graph_bar, text='100% • drag to pan')
         self.zoom_note.pack(side='left', padx=8)
         self.graph = self.make_canvas(self.tabs['Dependency DAG'])
-        self.graph.bind('<ButtonPress-1>', lambda e: self.graph.scan_mark(e.x, e.y))
+        self.node_details = ttk.Label(self.tabs['Dependency DAG'], text='Click a step to inspect it.', wraplength=750, padding=8)
+        self.node_details.pack(anchor='w')
+        self.source_button = ttk.Button(self.tabs['Dependency DAG'], text='Go to source', command=self.goto_node, state='disabled')
+        self.source_button.pack(anchor='w', padx=8, pady=(0, 6))
+        self.graph.bind('<ButtonPress-1>', self.graph_press)
+        self.graph.bind('<ButtonRelease-1>', self.graph_release)
         self.graph.bind('<B1-Motion>', lambda e: self.graph.scan_dragto(e.x, e.y, gain=1))
         self.graph.bind('<Control-MouseWheel>', lambda e: self.zoom_graph(1.25 if e.delta > 0 else 1/1.25))
         self.graph.bind('<Control-Button-4>', lambda e: self.zoom_graph(1.25))
         self.graph.bind('<Control-Button-5>', lambda e: self.zoom_graph(1/1.25))
+        self.comparison = self.make_table(self.tabs['Scheduler'], ('Strategy', 'Minutes', 'Meaning'))
+        self.comparison.configure(height=9)
+        self.comparison.column('Strategy', width=230)
+        self.comparison.column('Minutes', width=65, stretch=False)
+        self.comparison.column('Meaning', width=290)
+        self.comparison.tag_configure('final', background='#dcfce7')
         self.schedule_table = self.make_table(self.tabs['Scheduler'], ('Step', 'Start', 'End', 'Duration', 'Resources', 'Dependencies'))
+        self.schedule_table.configure(height=5)
         self.schedule_note = ttk.Label(self.tabs['Scheduler'], text='', wraplength=800)
         self.schedule_note.pack(anchor='w', padx=8, pady=8)
         self.phases = tk.Text(self.tabs['Compiler phases'], font=('DejaVu Sans Mono', 10), wrap='word', state='disabled')
@@ -98,6 +142,7 @@ class App(tk.Tk):
         self.phase_progress.pack(fill='x', padx=7, pady=(0, 7))
         self.timeline.bind('<Configure>', lambda e: self.draw_timeline())
         self.graph.bind('<Configure>', lambda e: self.draw_graph())
+        self.resource_canvas.bind('<Configure>', lambda e: self.draw_resources())
         self.load_file(ROOT / 'examples' / 'demo.recipe')
 
     @staticmethod
@@ -123,24 +168,84 @@ class App(tk.Tk):
         canvas.grid(row=0, column=0, sticky='nsew'); sy.grid(row=0, column=1, sticky='ns'); sx.grid(row=1, column=0, sticky='ew')
         return canvas
 
+    def is_dirty(self):
+        # Compare the actual buffer, including an edit whose Tk event is pending.
+        return self.editor.get('1.0', 'end-1c') != self.saved_source
+
+    def update_title(self):
+        name = self.current_path.name if self.current_path else 'Untitled'
+        self.title(f'RecipeLang | {name}' + (' *' if self.is_dirty() else ''))
+
+    def confirm_discard(self):
+        if not self.is_dirty():
+            return True
+        answer = messagebox.askyesnocancel('Unsaved changes', 'Save your changes before continuing?', parent=self)
+        if answer is None:
+            return False
+        return self.save_file() if answer else True
+
+    def sync_example(self):
+        name = next((name for name, path in self.example_paths.items() if path == self.current_path), '')
+        self.example_name.set(name)
+
+    def load_example(self, event=None):
+        path = self.example_paths.get(self.example_name.get())
+        if path:
+            self.load_file(path)
+        self.sync_example()
+
     def load_file(self, path):
         try: content = Path(path).read_text(encoding='utf-8')
-        except OSError as e: messagebox.showerror('Open failed', str(e)); return
+        except (OSError, UnicodeError) as e:
+            messagebox.showerror('Open failed', str(e), parent=self)
+            return False
+        if not self.confirm_discard():
+            return False
         self.editor.delete('1.0', 'end'); self.editor.insert('1.0', content)
         self.current_path = Path(path)
-        self.title(f'RecipeLang | {self.current_path.name}')
+        self.saved_source = content
+        # Flush modified notifications now so they cannot invalidate a later compile.
+        self.source_editor.changed()
+        self.editor.edit_reset()
+        self.source_changed()
+        self.sync_example()
+        self.update_title()
+        return True
 
     def open_file(self):
         path = filedialog.askopenfilename(filetypes=[('RecipeLang recipes', '*.recipe'), ('All files', '*.*')])
         if path: self.load_file(path)
 
-    def save_file(self):
-        path = self.current_path or filedialog.asksaveasfilename(defaultextension='.recipe', filetypes=[('RecipeLang recipes', '*.recipe')])
-        if not path: return
-        try: Path(path).write_text(self.editor.get('1.0', 'end-1c'), encoding='utf-8')
-        except OSError as e: messagebox.showerror('Save failed', str(e)); return
+    def save_as(self):
+        return self.save_file(as_new=True)
+
+    def save_file(self, as_new=False):
+        path = self.current_path if not as_new else None
+        path = path or filedialog.asksaveasfilename(parent=self, defaultextension='.recipe',
+            initialfile=self.current_path.name if self.current_path else 'recipe.recipe',
+            filetypes=[('RecipeLang recipes', '*.recipe')])
+        if not path: return False
+        source = self.editor.get('1.0', 'end-1c')
+        try: Path(path).write_text(source, encoding='utf-8')
+        except OSError as e:
+            messagebox.showerror('Save failed', str(e), parent=self)
+            return False
         self.current_path = Path(path)
-        self.title(f'RecipeLang | {self.current_path.name}')
+        self.saved_source = source
+        self.update_title()
+        self.sync_example()
+        return True
+
+    def close_file(self):
+        if not self.confirm_discard():
+            return
+        self.pause()
+        if self.phase_job is not None:
+            self.after_cancel(self.phase_job)
+        if self.source_editor.pending is not None:
+            self.source_editor.after_cancel(self.source_editor.pending)
+            self.source_editor.pending = None
+        self.destroy()
 
     def set_phases(self, text):
         self.phases.configure(state='normal'); self.phases.delete('1.0', 'end')
@@ -148,6 +253,7 @@ class App(tk.Tk):
 
     def source_changed(self):
         # A source edit invalidates both scheduled callbacks and old diagnostics.
+        self.update_title()
         self.pause()
         if self.phase_job is not None:
             self.after_cancel(self.phase_job)
@@ -159,7 +265,7 @@ class App(tk.Tk):
         if hasattr(self, 'phases'):
             self.set_phases('Source changed — compile to refresh results.')
             self.phase_progress['value'] = 0
-            for table in (self.tokens, self.ast, self.symbols, self.schedule_table, self.waiting):
+            for table in (self.tokens, self.ast, self.symbols, self.schedule_table, self.waiting, self.comparison):
                 self.clear_table(table)
             self.schedule_note.configure(text='')
             self.stats.configure(text='Source changed — compile to refresh results.')
@@ -183,7 +289,7 @@ class App(tk.Tk):
         self.compiling = True
         self.phase_history = []
         self.phase_progress['value'] = 0
-        for table in (self.tokens, self.ast, self.symbols, self.schedule_table, self.waiting):
+        for table in (self.tokens, self.ast, self.symbols, self.schedule_table, self.waiting, self.comparison):
             self.clear_table(table)
         self.schedule_note.configure(text='')
         self.active.configure(text='')
@@ -266,6 +372,18 @@ class App(tk.Tk):
             self.symbols.insert('', 'end', values=('Step', name, f'{step["duration"]} min', f'needs: {", ".join(step["needs"]) or "none"}; uses: {", ".join(step["uses"]) or "none"}'))
 
     def populate_schedule(self, s, ast):
+        labels = {'source_topological': 'Original topological order', 'critical_path': 'Longest remaining path',
+                  'least_slack': 'Least slack', 'resource_pressure': 'Resource pressure',
+                  'longest_duration': 'Longest duration'}
+        self.clear_table(self.comparison)
+        self.comparison.insert('', 'end', values=('Sequential baseline', s['sequential_minutes'], 'Every step runs one after another'))
+        for candidate in s['priority_results']:
+            chosen = candidate['rule'] == s['selected_priority']
+            self.comparison.insert('', 'end', values=(labels[candidate['rule']], candidate['minutes'],
+                'Selected heuristic (first best on ties)' if chosen else 'Feasible heuristic'))
+        self.comparison.insert('', 'end', values=('Final schedule', s['optimized_minutes'],
+            'Proven optimal' if s['provably_optimal'] else 'Best found; not proven'), tags=('final',))
+        self.comparison.insert('', 'end', values=('Proven lower bound', s['lower_bound'], 'A bound, not necessarily an achievable schedule'))
         self.clear_table(self.schedule_table)
         for slot in s['slots']:
             step = ast['steps'][slot['name']]
@@ -274,7 +392,8 @@ class App(tk.Tk):
         resource_bounds = ', '.join(f'{r}: {bound}' for r, bound in s['resource_lower_bounds'].items()) or 'none'
         self.schedule_note.configure(text=f'Method: {s["method"]}. Priority orders evaluated: {s["priority_orders_evaluated"]}.\n'
                                     f'Critical path: {s["critical_path_lower_bound"]} min. Resource bounds: {resource_bounds}.\n'
-                                    f'{proof}. Gap to lower bound: {s["optimality_gap_minutes"]} min.')
+                                    f'{proof}. {s["optimality_reason"]}\n'
+                                    f'Gap to lower bound: {s["optimality_gap_minutes"]} min (not necessarily the gap to the optimum).')
 
 
     def export_results(self):
@@ -301,6 +420,7 @@ class App(tk.Tk):
 
     def draw_timeline(self):
         c = self.timeline; c.delete('all')
+        self.draw_resources()
         if not self.result: return
         slots = self.result['schedule']['slots']; max_t = max(1, self.result['schedule']['optimized_minutes'])
         w = max(670, c.winfo_width()); x0 = 165; pw = max(400, w-x0-45); rh = 46
@@ -318,10 +438,97 @@ class App(tk.Tk):
         c.configure(scrollregion=(0, 0, w, max(400, 90+len(slots)*rh)))
         self.update_clock()
 
+    def draw_resources(self):
+        c = self.resource_canvas
+        c.delete('all')
+        if not self.result:
+            self.resource_note.configure(text='Compile a recipe to see resource usage.')
+            return
+        rows = resource_lanes(self.result)
+        slots = self.result['schedule']['slots']
+        unassigned = [s for s in slots if not s['uses']]
+        # Resource-free tasks need distinct rows: they may overlap each other.
+        rows += [{'resource': 'No resource: ' + s['name'], 'unit': None, 'slots': [s]} for s in unassigned]
+        width = max(680, c.winfo_width())
+        x0, rh = 190, 60
+        plot = max(420, width-x0-35)
+        finish = max(1, self.result['schedule']['optimized_minutes'])
+        colors = {s['name']: PALETTE[i % len(PALETTE)] for i, s in enumerate(slots)}
+        for t in sorted(set(range(0, finish+1, max(1, (finish+9)//10))) | {finish}):
+            x = x0 + t/finish*plot
+            c.create_line(x, 30, x, 45+len(rows)*rh, fill='#e2e8f0')
+            c.create_text(x, 15, text=f'{t}', fill='#64748b')
+        for i, row in enumerate(rows):
+            y = 45+i*rh
+            label = row['resource'] + (f' #{row["unit"]}' if row['unit'] is not None else '')
+            c.create_text(8, y+16, anchor='w', width=175, text=label, font=('Arial', 10, 'bold'))
+            if not row['slots']:
+                c.create_text(x0+10, y+16, anchor='w', text='Unused', fill='#64748b')
+            for slot in row['slots']:
+                x1, x2 = x0+slot['start']/finish*plot, x0+slot['end']/finish*plot
+                tags = ('resource_slot', 'task:' + slot['name'])
+                c.create_rectangle(x1, y, max(x1+2, x2), y+34, fill=colors[slot['name']], outline='', tags=tags)
+                if x2-x1 > 45:
+                    # Keep labels inside their bars; the full name is in the task timeline.
+                    limit = max(3, int((x2-x1-8)/7))
+                    name = slot['name'] if len(slot['name']) <= limit else slot['name'][:limit-1] + '…'
+                    c.create_text((x1+x2)/2, y+17, text=name, fill='white', font=('Arial', 9), tags=tags)
+        x = x0+self.minute/finish*plot
+        c.create_line(x, 28, x, 45+len(rows)*rh, fill='#ef4444', width=3)
+        c.configure(scrollregion=(0, 0, width, max(200, 65+len(rows)*rh)))
+        usage = []
+        for resource, capacity in self.result['ast']['resources'].items():
+            count = sum(resource in s['uses'] and s['start'] <= self.minute < s['end'] for s in slots)
+            usage.append(f'{resource}: {count}/{capacity} occupied')
+        self.resource_note.configure(text=f'At {self.minute} min • ' + (' | '.join(usage) or 'No declared resources'))
+
+    def graph_press(self, event):
+        self.graph_click_origin = (event.x, event.y)
+        self.graph.scan_mark(event.x, event.y)
+
+    def graph_release(self, event):
+        origin = getattr(self, 'graph_click_origin', (event.x, event.y))
+        if abs(event.x-origin[0]) + abs(event.y-origin[1]) > 5:
+            return  # A pan should not unexpectedly select a node.
+        x, y = self.graph.canvasx(event.x), self.graph.canvasy(event.y)
+        for item in reversed(self.graph.find_overlapping(x, y, x, y)):
+            node = next((tag[5:] for tag in self.graph.gettags(item) if tag.startswith('node:')), None)
+            if node:
+                self.select_node(node)
+                break
+
+    def select_node(self, name):
+        data = self.result or self.preview
+        step = data.get('ast', {}).get('steps', {}).get(name)
+        if step is None:
+            return
+        self.selected_node = name
+        ingredients = ', '.join(f'{n} {q:g} {u}' for n, q, u in step['takes']) or 'none'
+        self.node_details.configure(text=f'{name} • {step["duration"]} min • Source line {step["line"]}\n'
+            f'Depends on: {", ".join(step["needs"]) or "none"} | Resources: {", ".join(step["uses"]) or "none"}\n'
+            f'Ingredients: {ingredients}')
+        self.source_button.configure(state='normal')
+        self.draw_graph()
+
+    def goto_node(self):
+        data = self.result or self.preview
+        step = data.get('ast', {}).get('steps', {}).get(self.selected_node)
+        if step:
+            index = f'{step["line"]}.0'
+            self.editor.mark_set('insert', index)
+            self.editor.see(index)
+            self.editor.tag_remove('sel', '1.0', 'end')
+            self.editor.tag_add('sel', index, f'{step["line"]}.end')
+            self.editor.focus_set()
+
     def draw_graph(self):
         c = self.graph; c.delete('all')
         data = self.result or self.preview
-        if 'ir' not in data: return
+        if 'ir' not in data:
+            self.selected_node = None
+            self.node_details.configure(text='Click a step to inspect it.')
+            self.source_button.configure(state='disabled')
+            return
         steps = data['ast']['steps']; edges = data['ir']['edges']
         levels = {}
         def level(name):
@@ -343,9 +550,10 @@ class App(tk.Tk):
             x1,y1 = pos[a]; x2,y2 = pos[b]
             c.create_line(x1+70,y1,x2-70,y2,arrow='last',arrowshape=(12,14,6),fill='#dc2626' if a in critical and b in critical else '#64748b',width=3 if a in critical and b in critical else 2)
         for name, (x,y) in pos.items():
-            c.create_rectangle(x-70,y-26,x+70,y+26,fill='#fee2e2' if name in critical else '#e0e7ff',outline='#dc2626' if name in critical else '#4338ca',width=3 if name in critical else 2)
-            c.create_text(x,y-7,text=name,font=('Arial',max(1, round(10*self.graph_zoom)),'bold'), width=135*self.graph_zoom)
-            c.create_text(x,y+12,text=f'{steps[name]["duration"]} min',font=('Arial',max(1, round(9*self.graph_zoom))),fill='#475569')
+            tags = ('node', 'node:' + name)
+            c.create_rectangle(x-70,y-26,x+70,y+26,fill='#fef3c7' if name == self.selected_node else '#fee2e2' if name in critical else '#e0e7ff',outline='#dc2626' if name in critical else '#4338ca',width=3 if name in critical else 2,tags=tags)
+            c.create_text(x,y-7,text=name,font=('Arial',max(1, round(10*self.graph_zoom)),'bold'), width=135*self.graph_zoom,tags=tags)
+            c.create_text(x,y+12,text=f'{steps[name]["duration"]} min',font=('Arial',max(1, round(9*self.graph_zoom))),fill='#475569',tags=tags)
         c.scale('all', 0, 0, self.graph_zoom, self.graph_zoom)
         for item in c.find_all():
             if c.type(item) == 'line':

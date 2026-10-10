@@ -1,85 +1,118 @@
-# RecipeLang — Compiler Workbench
+# RecipeLang
 
-The improved workbench is now the default version on `main`.
-The original Review 2 version is preserved by tag `original-review2` at commit `4b28152`.
-The feature history remains on `improvements/editor-scheduler-simulation`. Existing recipe
-syntax, units, CLI, synchronous compiler API, and the eight live phases are preserved.
-Historical sample exports and release notes remain available unchanged.
+RecipeLang is a small domain-specific language compiler that turns a recipe into a validated, resource-aware cooking schedule.
 
-## Windows setup
+```text
+Source → Lexer → Parser → AST → Semantic analysis → Dependency DAG
+       → Critical path → Resource scheduler → Validator → Timeline
+```
 
-Run these commands from the project directory (Python with Tkinter installed):
+The included demo improves a 38-minute sequential recipe to **33 minutes** while respecting its dependencies and limited stove/cook capacity.
+
+![Resource usage in RecipeLang](docs/images/resources.png)
+
+## What it includes
+
+- Hand-written lexer and parser with tokens, source locations and an AST
+- Semantic checks for names, units, quantities, cycles and resource references
+- Dependency graph, critical-path analysis and parallelism detection
+- Five scheduling priorities plus bounded exact search for small recipes
+- Independent validation of dependencies, durations and resource capacity
+- Live compilation phases, simulation, resource lanes and JSON/CSV/PNG exports
+- Syntax highlighting, clickable errors, example recipes and safe file handling
+
+## Quick start
+
+Requires Python 3.10+ and Tkinter.
 
 ```powershell
+# Windows
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt
-.\.venv\Scripts\python -m unittest discover -s tests -v
 .\.venv\Scripts\python gui.py
 ```
 
-## Ubuntu / WSL2 setup
-
 ```bash
-# Run from your project directory.
-sudo apt install python3-tk python3-pil
-python3 -m unittest discover -s tests -v
-python3 gui.py
-```
-
-If `python3-pil` is unavailable for your Python environment, install Pillow in a virtual environment:
-
-```bash
+# Ubuntu / WSL2
+sudo apt install python3-tk
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
 python gui.py
 ```
 
-CLI: `python3 recipelang.py examples/demo.recipe`.
+Run the compiler from a terminal:
 
-## Live compilation walkthrough
+```bash
+python recipelang.py examples/demo.recipe
+```
 
-1. Open the **Compiler phases** tab (or click **Compile + Optimize**, which selects it automatically).
-2. The application now runs the *actual* lexer, parser, semantic validation, symbol table, dependency IR, scheduler, independent validator, and final timeline as eight separately scheduled operations. It displays progress as each finishes. This is **real staged execution**, not a replay of precomputed logs.
-3. Tokens, AST, symbol table, DAG, and scheduler data appear as their respective phases execute. The timeline becomes available after independent validation.
-4. Switch to **Timeline**, **Tokens**, **AST**, **Symbol table**, **Dependency DAG**, and **Scheduler** to explain the output.
-5. Try **Next event**, **Play**, **Pause**, **Next minute**, **Reset**, and speed controls. Playback defaults to **Events**; choose **Minutes** to retain minute-by-minute playback. Open `examples/complex.recipe` for the eight-step demonstration.
-6. Click **Export all** to save labeled Gantt and DAG PNGs, compilation/tokens/AST/graph/schedule JSON and timeline CSV.
+## Language example
 
-## Editor, graph, and simulation
+```text
+ingredient onion 2 pcs
+resource stove 1
 
-- The editor highlights keywords, quantities, units, comments, and invalid characters even while a recipe is incomplete. Line numbers follow scrolling. Underlined errors in **Compiler phases** jump to the reported source line when clicked; errors without a source line are displayed without a link.
-- Editing or loading source cancels pending compilation/playback and clears outdated results. Click **Compile + Optimize** to run a fresh snapshot.
-- In **Dependency DAG**, use **+**, **−**, **Fit**, and **100%**. Drag to pan or use the scrollbars. Ctrl+wheel zooms; Ctrl+Button-4/5 is supported on Linux.
-- **Next event** jumps to the next start or finish time. All changes at the same minute happen together: task intervals include their start and exclude their end.
-- The simulation table explains unfinished dependencies, occupied resources and their holders, future resource reservations, or deliberate waiting for a scheduled start. This replays the validated schedule; it does not reschedule tasks during playback. Speed controls the delay per event or minute.
+step chop_onion
+  duration 5 min
+  takes onion 1 pcs
+end
 
-## Scheduling guarantees and limitations
+step fry_onion
+  needs chop_onion
+  uses stove
+  duration 8 min
+end
+```
 
-- The scheduler respects explicit dependencies and declared resource capacities. The independent validator checks its output.
-- Exact event-time search is attempted only for recipes with up to eight steps and has a 120,000-state budget; it may fall back to a heuristic. **Only claim optimality when the result's `provably_optimal` flag is true, or the makespan matches a valid lower bound.**
-- Time resolution is whole minutes; `uses` requires one unit of each named resource.
-- The critical-path lower bound ignores resource contention.
-- Five deterministic priority orders are compared: the original topological order, longest remaining dependency path, least slack, resource pressure, and longest duration. Each uses earliest-feasible placement. Retaining the original order as a candidate prevents regression against that heuristic.
-- Each resource contributes `ceil(total usage minutes / capacity)`. A stronger bound adds the minimum dependency release time and minimum downstream tail among its users. The overall `lower_bound` is the maximum of these resource bounds and the critical path; bounds for different resources are not added together.
-- Small-instance exact search starts with the best heuristic schedule and prunes using dependency and remaining resource-work bounds. The old factorial priority-list enumeration is no longer needed. Search is skipped when the heuristic already meets the proven lower bound.
-- `provably_optimal` is true only after exhaustive search completes or the schedule matches the lower bound. `optimality_gap_minutes` measures distance to the lower bound, not necessarily distance to the true optimum. An exact optimum may still have a positive gap if the bound is loose.
-- The phase display uses Tkinter's event loop between stages. A long individual scheduling phase can still temporarily occupy the UI thread. It is not a continuous token-by-token animation.
-- PNG exports require Pillow; compiler, CLI, GUI and JSON/CSV exports otherwise use Python standard library.
+Supported units: `pc`, `pcs`, `mg`, `g`, `kg`, `ml`, `l`, `cup`, `cups`, `tsp`, `tbsp`. Durations may use `min`, `hr` or `sec` when they resolve to whole minutes.
 
-## Earlier release features
+## Workbench
 
-- True phase-by-phase compilation via lazy `compile_stages()` generator, retaining synchronous `compile_recipe()` API.
-- Actual lexer source columns instead of GUI guesses.
-- Exported Gantt chart includes task names, time ticks, durations; exported DAG includes names, durations and directed dependency arrows.
-- Added final-release regression tests and corrected the documentation.
+Choose a recipe from the example menu and press **Compile + Optimize** or `F5`.
 
-## Verification
+- **Compiler phases** shows the eight real stages as they run.
+- **Dependency DAG** supports zoom, pan, node inspection and source navigation.
+- **Scheduler** compares every heuristic, the final schedule and its lower bound.
+- **Timeline** explains why each step is running, waiting or complete.
+- **Resources** shows which step occupies each resource unit during playback.
 
-Run `python3 -m unittest discover -s tests -v` (or the Windows command above).
-The 49 tests include original compatibility/export checks, Windows CLI encoding and JSON export checks, independent minute-grid
-exhaustive comparisons on 16 seeded small recipes, capacity bounds, larger-recipe
-priority improvements, waiting reasons, and real Tk checks for staged output,
-editor diagnostics, graph fit/zoom, and playback controls. Tk tests skip when a
-graphical display is unavailable. Ubuntu/WSLg appearance still needs verification
-on that platform; the current run used Windows and Python 3.14.
+<table>
+  <tr>
+    <td><img src="docs/images/graph.png" alt="Clickable dependency graph"></td>
+    <td><img src="docs/images/scheduler.png" alt="Scheduling strategy comparison"></td>
+  </tr>
+  <tr>
+    <td align="center">Dependency graph</td>
+    <td align="center">Scheduling comparison</td>
+  </tr>
+</table>
+
+## Scheduling
+
+The scheduler tries the original topological order, longest remaining path, least slack, resource pressure and longest duration. Each candidate uses earliest feasible placement.
+
+For recipes with up to eight steps, bounded event-time search attempts to prove the best schedule optimal. The GUI states whether optimality was proved, skipped due to size, or left unproved after the search budget.
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The suite contains **66 tests** covering compiler phases, scheduling, validation, exports, simulation, CLI behavior and real Tkinter interactions.
+
+## Project layout
+
+```text
+recipelang.py          compiler and scheduler
+gui.py                 visual workbench
+editor.py              source editor and diagnostics
+simulation.py          playback and resource lanes
+schedule_validator.py  independent schedule checker
+exporters.py           JSON, CSV and PNG exports
+examples/              valid and invalid RecipeLang programs
+tests/                 automated test suite
+```
+
+The original verified Review 2 release is preserved in Git as tag `original-review2`.
