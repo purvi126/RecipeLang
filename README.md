@@ -1,7 +1,8 @@
 # RecipeLang — Compiler Workbench
 
-The original Review 2 version is preserved on `main` at baseline commit `4b28152`.
-The improvements are on `improvements/editor-scheduler-simulation`. Existing recipe
+The improved workbench is now the default version on `main`.
+The original Review 2 version is preserved by tag `original-review2` at commit `4b28152`.
+The feature history remains on `improvements/editor-scheduler-simulation`. Existing recipe
 syntax, units, CLI, synchronous compiler API, and the eight live phases are preserved.
 Historical sample exports and release notes remain available unchanged.
 
