@@ -1,0 +1,78 @@
+{
+  "slots": [
+    {
+      "name": "wash_rice",
+      "start": 0,
+      "end": 4,
+      "uses": [
+        "cook"
+      ]
+    },
+    {
+      "name": "heat_water",
+      "start": 0,
+      "end": 8,
+      "uses": [
+        "stove"
+      ]
+    },
+    {
+      "name": "preheat_oven",
+      "start": 0,
+      "end": 10,
+      "uses": [
+        "oven"
+      ]
+    },
+    {
+      "name": "chop_onion",
+      "start": 4,
+      "end": 9,
+      "uses": [
+        "cook"
+      ]
+    },
+    {
+      "name": "boil_rice",
+      "start": 8,
+      "end": 23,
+      "uses": [
+        "stove"
+      ]
+    },
+    {
+      "name": "prepare_sauce",
+      "start": 9,
+      "end": 18,
+      "uses": [
+        "stove",
+        "cook"
+      ]
+    },
+    {
+      "name": "roast_vegetables",
+      "start": 10,
+      "end": 22,
+      "uses": [
+        "oven"
+      ]
+    },
+    {
+      "name": "plate",
+      "start": 23,
+      "end": 26,
+      "uses": [
+        "cook"
+      ]
+    }
+  ],
+  "sequential_minutes": 66,
+  "optimized_minutes": 26,
+  "minutes_saved": 40,
+  "improvement_percent": 60.61,
+  "critical_path_lower_bound": 26,
+  "method": "exact event-time exhaustive search (provably optimal for this instance)",
+  "provably_optimal": true,
+  "exact_states_evaluated": 919,
+  "priority_orders_evaluated": 351
+}

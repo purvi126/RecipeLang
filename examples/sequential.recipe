@@ -1,0 +1,11 @@
+step prep
+ duration 3 min
+end
+step cook
+ needs prep
+ duration 7 min
+end
+step serve
+ needs cook
+ duration 2 min
+end

@@ -1,0 +1,9 @@
+resource stove 1
+step a
+  needs b
+  duration 5 min
+end
+step b
+  needs a
+  duration 5 min
+end

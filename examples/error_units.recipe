@@ -1,0 +1,5 @@
+ingredient milk 2 cups
+step pour
+  takes milk 5 kg
+  duration 2 min
+end

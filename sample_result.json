@@ -1,0 +1,642 @@
+{
+  "phases": [
+    "Lexical analysis: 85 tokens",
+    "Syntax analysis: AST with 4 steps",
+    "Semantic analysis: passed (units, names, quantities, DAG)",
+    "Symbol table: 2 ingredients, 2 resources, 4 steps",
+    "Dependency graph IR: 3 edges",
+    "Schedule optimization: topological-order search (earliest feasible placement; heuristic, not globally guaranteed)",
+    "Resource validation: passed",
+    "Timeline generation: complete"
+  ],
+  "tokens": [
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 1
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "ingredient",
+      "line": 2
+    },
+    {
+      "kind": "IDENT",
+      "value": "onion",
+      "line": 2
+    },
+    {
+      "kind": "NUMBER",
+      "value": "2",
+      "line": 2
+    },
+    {
+      "kind": "IDENT",
+      "value": "pcs",
+      "line": 2
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 2
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "ingredient",
+      "line": 3
+    },
+    {
+      "kind": "IDENT",
+      "value": "water",
+      "line": 3
+    },
+    {
+      "kind": "NUMBER",
+      "value": "2",
+      "line": 3
+    },
+    {
+      "kind": "IDENT",
+      "value": "cups",
+      "line": 3
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 3
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "resource",
+      "line": 4
+    },
+    {
+      "kind": "IDENT",
+      "value": "stove",
+      "line": 4
+    },
+    {
+      "kind": "NUMBER",
+      "value": "1",
+      "line": 4
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 4
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "resource",
+      "line": 5
+    },
+    {
+      "kind": "IDENT",
+      "value": "cook",
+      "line": 5
+    },
+    {
+      "kind": "NUMBER",
+      "value": "1",
+      "line": 5
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 5
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 6
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "step",
+      "line": 7
+    },
+    {
+      "kind": "IDENT",
+      "value": "boil_water",
+      "line": 7
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 7
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "uses",
+      "line": 8
+    },
+    {
+      "kind": "IDENT",
+      "value": "stove",
+      "line": 8
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 8
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "duration",
+      "line": 9
+    },
+    {
+      "kind": "NUMBER",
+      "value": "10",
+      "line": 9
+    },
+    {
+      "kind": "IDENT",
+      "value": "min",
+      "line": 9
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 9
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "end",
+      "line": 10
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 10
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 11
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "step",
+      "line": 12
+    },
+    {
+      "kind": "IDENT",
+      "value": "chop_onion",
+      "line": 12
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 12
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "uses",
+      "line": 13
+    },
+    {
+      "kind": "IDENT",
+      "value": "cook",
+      "line": 13
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 13
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "duration",
+      "line": 14
+    },
+    {
+      "kind": "NUMBER",
+      "value": "5",
+      "line": 14
+    },
+    {
+      "kind": "IDENT",
+      "value": "min",
+      "line": 14
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 14
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "takes",
+      "line": 15
+    },
+    {
+      "kind": "IDENT",
+      "value": "onion",
+      "line": 15
+    },
+    {
+      "kind": "NUMBER",
+      "value": "1",
+      "line": 15
+    },
+    {
+      "kind": "IDENT",
+      "value": "pcs",
+      "line": 15
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 15
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "end",
+      "line": 16
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 16
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 17
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "step",
+      "line": 18
+    },
+    {
+      "kind": "IDENT",
+      "value": "fry_vegetables",
+      "line": 18
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 18
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "uses",
+      "line": 19
+    },
+    {
+      "kind": "IDENT",
+      "value": "stove",
+      "line": 19
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 19
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "duration",
+      "line": 20
+    },
+    {
+      "kind": "NUMBER",
+      "value": "8",
+      "line": 20
+    },
+    {
+      "kind": "IDENT",
+      "value": "min",
+      "line": 20
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 20
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "end",
+      "line": 21
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 21
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 22
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "step",
+      "line": 23
+    },
+    {
+      "kind": "IDENT",
+      "value": "cook",
+      "line": 23
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 23
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "needs",
+      "line": 24
+    },
+    {
+      "kind": "IDENT",
+      "value": "boil_water",
+      "line": 24
+    },
+    {
+      "kind": "COMMA",
+      "value": ",",
+      "line": 24
+    },
+    {
+      "kind": "IDENT",
+      "value": "chop_onion",
+      "line": 24
+    },
+    {
+      "kind": "COMMA",
+      "value": ",",
+      "line": 24
+    },
+    {
+      "kind": "IDENT",
+      "value": "fry_vegetables",
+      "line": 24
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 24
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "uses",
+      "line": 25
+    },
+    {
+      "kind": "IDENT",
+      "value": "stove",
+      "line": 25
+    },
+    {
+      "kind": "COMMA",
+      "value": ",",
+      "line": 25
+    },
+    {
+      "kind": "IDENT",
+      "value": "cook",
+      "line": 25
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 25
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "duration",
+      "line": 26
+    },
+    {
+      "kind": "NUMBER",
+      "value": "15",
+      "line": 26
+    },
+    {
+      "kind": "IDENT",
+      "value": "min",
+      "line": 26
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 26
+    },
+    {
+      "kind": "KEYWORD",
+      "value": "end",
+      "line": 27
+    },
+    {
+      "kind": "NEWLINE",
+      "value": "\n",
+      "line": 27
+    }
+  ],
+  "ast": {
+    "ingredients": {
+      "onion": {
+        "name": "onion",
+        "quantity": 2.0,
+        "unit": "pcs",
+        "line": 2
+      },
+      "water": {
+        "name": "water",
+        "quantity": 2.0,
+        "unit": "cups",
+        "line": 3
+      }
+    },
+    "resources": {
+      "stove": 1,
+      "cook": 1
+    },
+    "steps": {
+      "boil_water": {
+        "name": "boil_water",
+        "duration": 10,
+        "needs": [],
+        "uses": [
+          "stove"
+        ],
+        "takes": [],
+        "line": 7
+      },
+      "chop_onion": {
+        "name": "chop_onion",
+        "duration": 5,
+        "needs": [],
+        "uses": [
+          "cook"
+        ],
+        "takes": [
+          [
+            "onion",
+            1.0,
+            "pcs"
+          ]
+        ],
+        "line": 12
+      },
+      "fry_vegetables": {
+        "name": "fry_vegetables",
+        "duration": 8,
+        "needs": [],
+        "uses": [
+          "stove"
+        ],
+        "takes": [],
+        "line": 18
+      },
+      "cook": {
+        "name": "cook",
+        "duration": 15,
+        "needs": [
+          "boil_water",
+          "chop_onion",
+          "fry_vegetables"
+        ],
+        "uses": [
+          "stove",
+          "cook"
+        ],
+        "takes": [],
+        "line": 23
+      }
+    }
+  },
+  "ir": {
+    "ingredients": {
+      "onion": {
+        "name": "onion",
+        "quantity": 2.0,
+        "unit": "pcs",
+        "line": 2
+      },
+      "water": {
+        "name": "water",
+        "quantity": 2.0,
+        "unit": "cups",
+        "line": 3
+      }
+    },
+    "resources": {
+      "stove": 1,
+      "cook": 1
+    },
+    "steps": {
+      "boil_water": {
+        "name": "boil_water",
+        "duration": 10,
+        "needs": [],
+        "uses": [
+          "stove"
+        ],
+        "takes": [],
+        "line": 7
+      },
+      "chop_onion": {
+        "name": "chop_onion",
+        "duration": 5,
+        "needs": [],
+        "uses": [
+          "cook"
+        ],
+        "takes": [
+          [
+            "onion",
+            1.0,
+            "pcs"
+          ]
+        ],
+        "line": 12
+      },
+      "fry_vegetables": {
+        "name": "fry_vegetables",
+        "duration": 8,
+        "needs": [],
+        "uses": [
+          "stove"
+        ],
+        "takes": [],
+        "line": 18
+      },
+      "cook": {
+        "name": "cook",
+        "duration": 15,
+        "needs": [
+          "boil_water",
+          "chop_onion",
+          "fry_vegetables"
+        ],
+        "uses": [
+          "stove",
+          "cook"
+        ],
+        "takes": [],
+        "line": 23
+      }
+    },
+    "edges": [
+      [
+        "boil_water",
+        "cook"
+      ],
+      [
+        "chop_onion",
+        "cook"
+      ],
+      [
+        "fry_vegetables",
+        "cook"
+      ]
+    ]
+  },
+  "schedule": {
+    "slots": [
+      {
+        "name": "chop_onion",
+        "start": 0,
+        "end": 5,
+        "uses": [
+          "cook"
+        ]
+      },
+      {
+        "name": "boil_water",
+        "start": 0,
+        "end": 10,
+        "uses": [
+          "stove"
+        ]
+      },
+      {
+        "name": "fry_vegetables",
+        "start": 10,
+        "end": 18,
+        "uses": [
+          "stove"
+        ]
+      },
+      {
+        "name": "cook",
+        "start": 18,
+        "end": 33,
+        "uses": [
+          "stove",
+          "cook"
+        ]
+      }
+    ],
+    "sequential_minutes": 38,
+    "optimized_minutes": 33,
+    "minutes_saved": 5,
+    "critical_path_lower_bound": 25,
+    "method": "topological-order search (earliest feasible placement; heuristic, not globally guaranteed)",
+    "priority_orders_evaluated": 6
+  }
+}

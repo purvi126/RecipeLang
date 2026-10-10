@@ -1,0 +1,27 @@
+# Review 1 example: 38 min sequential, 33 min optimized
+ingredient onion 2 pcs
+ingredient water 2 cups
+resource stove 1
+resource cook 1
+
+step boil_water
+  uses stove
+  duration 10 min
+end
+
+step chop_onion
+  uses cook
+  duration 5 min
+  takes onion 1 pcs
+end
+
+step fry_vegetables
+  uses stove
+  duration 8 min
+end
+
+step cook
+  needs boil_water, chop_onion, fry_vegetables
+  uses stove, cook
+  duration 15 min
+end

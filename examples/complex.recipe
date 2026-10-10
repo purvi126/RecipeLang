@@ -1,0 +1,46 @@
+# Multi-resource dinner with overlapping prep
+ingredient rice 500 g
+ingredient water 2 l
+ingredient onion 4 pcs
+resource stove 2
+resource cook 1
+resource oven 1
+step wash_rice
+ uses cook
+ takes rice 200 g
+ duration 4 min
+end
+step chop_onion
+ uses cook
+ takes onion 2 pcs
+ duration 5 min
+end
+step heat_water
+ uses stove
+ takes water 500 ml
+ duration 8 min
+end
+step boil_rice
+ needs wash_rice, heat_water
+ uses stove
+ duration 15 min
+end
+step prepare_sauce
+ needs chop_onion
+ uses stove, cook
+ duration 9 min
+end
+step preheat_oven
+ uses oven
+ duration 10 min
+end
+step roast_vegetables
+ needs preheat_oven, chop_onion
+ uses oven
+ duration 12 min
+end
+step plate
+ needs boil_rice, prepare_sauce, roast_vegetables
+ uses cook
+ duration 3 min
+end

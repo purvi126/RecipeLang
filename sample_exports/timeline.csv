@@ -1,0 +1,9 @@
+name,start,end,uses
+wash_rice,0,4,cook
+heat_water,0,8,stove
+preheat_oven,0,10,oven
+chop_onion,4,9,cook
+boil_rice,8,23,stove
+prepare_sauce,9,18,"stove, cook"
+roast_vegetables,10,22,oven
+plate,23,26,cook

@@ -1,0 +1,19 @@
+ingredient water 2 l
+ingredient flour 1 kg
+resource stove 2
+resource cook 1
+step prep
+  uses cook
+  duration 5 min
+  takes flour 500 g
+end
+step heat
+  uses stove
+  duration 10 min
+  takes water 2 cups
+end
+step finish
+  needs prep, heat
+  uses stove, cook
+  duration 8 min
+end

@@ -1,0 +1,174 @@
+{
+  "ingredients": {
+    "rice": {
+      "name": "rice",
+      "quantity": 500.0,
+      "unit": "g",
+      "line": 2
+    },
+    "water": {
+      "name": "water",
+      "quantity": 2.0,
+      "unit": "l",
+      "line": 3
+    },
+    "onion": {
+      "name": "onion",
+      "quantity": 4.0,
+      "unit": "pcs",
+      "line": 4
+    }
+  },
+  "resources": {
+    "stove": 2,
+    "cook": 1,
+    "oven": 1
+  },
+  "steps": {
+    "wash_rice": {
+      "name": "wash_rice",
+      "duration": 4,
+      "needs": [],
+      "uses": [
+        "cook"
+      ],
+      "takes": [
+        [
+          "rice",
+          200.0,
+          "g"
+        ]
+      ],
+      "line": 8
+    },
+    "chop_onion": {
+      "name": "chop_onion",
+      "duration": 5,
+      "needs": [],
+      "uses": [
+        "cook"
+      ],
+      "takes": [
+        [
+          "onion",
+          2.0,
+          "pcs"
+        ]
+      ],
+      "line": 13
+    },
+    "heat_water": {
+      "name": "heat_water",
+      "duration": 8,
+      "needs": [],
+      "uses": [
+        "stove"
+      ],
+      "takes": [
+        [
+          "water",
+          500.0,
+          "ml"
+        ]
+      ],
+      "line": 18
+    },
+    "boil_rice": {
+      "name": "boil_rice",
+      "duration": 15,
+      "needs": [
+        "wash_rice",
+        "heat_water"
+      ],
+      "uses": [
+        "stove"
+      ],
+      "takes": [],
+      "line": 23
+    },
+    "prepare_sauce": {
+      "name": "prepare_sauce",
+      "duration": 9,
+      "needs": [
+        "chop_onion"
+      ],
+      "uses": [
+        "stove",
+        "cook"
+      ],
+      "takes": [],
+      "line": 28
+    },
+    "preheat_oven": {
+      "name": "preheat_oven",
+      "duration": 10,
+      "needs": [],
+      "uses": [
+        "oven"
+      ],
+      "takes": [],
+      "line": 33
+    },
+    "roast_vegetables": {
+      "name": "roast_vegetables",
+      "duration": 12,
+      "needs": [
+        "preheat_oven",
+        "chop_onion"
+      ],
+      "uses": [
+        "oven"
+      ],
+      "takes": [],
+      "line": 37
+    },
+    "plate": {
+      "name": "plate",
+      "duration": 3,
+      "needs": [
+        "boil_rice",
+        "prepare_sauce",
+        "roast_vegetables"
+      ],
+      "uses": [
+        "cook"
+      ],
+      "takes": [],
+      "line": 42
+    }
+  },
+  "edges": [
+    [
+      "wash_rice",
+      "boil_rice"
+    ],
+    [
+      "heat_water",
+      "boil_rice"
+    ],
+    [
+      "chop_onion",
+      "prepare_sauce"
+    ],
+    [
+      "preheat_oven",
+      "roast_vegetables"
+    ],
+    [
+      "chop_onion",
+      "roast_vegetables"
+    ],
+    [
+      "boil_rice",
+      "plate"
+    ],
+    [
+      "prepare_sauce",
+      "plate"
+    ],
+    [
+      "roast_vegetables",
+      "plate"
+    ]
+  ]
+}

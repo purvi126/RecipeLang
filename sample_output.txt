@@ -1,0 +1,17 @@
+✓ Lexical analysis: 85 tokens
+✓ Syntax analysis: AST with 4 steps
+✓ Semantic analysis: passed (units, names, quantities, DAG)
+✓ Symbol table: 2 ingredients, 2 resources, 4 steps
+✓ Dependency graph IR: 3 edges
+✓ Schedule optimization: topological-order search (earliest feasible placement; heuristic, not globally guaranteed)
+✓ Resource validation: passed
+✓ Timeline generation: complete
+
+OPTIMIZED COOKING TIMELINE
+00:00 - 05:00 | chop_onion [cook]
+00:00 - 10:00 | boil_water [stove]
+10:00 - 18:00 | fry_vegetables [stove]
+18:00 - 33:00 | cook [stove, cook]
+FINISHED at 33 min; sequential 38 min; saved 5 min
+Scheduling method: topological-order search (earliest feasible placement; heuristic, not globally guaranteed)
+Saved sample_result.json

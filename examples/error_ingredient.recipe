@@ -1,0 +1,5 @@
+ingredient milk 100 ml
+step pour
+ takes milk 200 ml
+ duration 1 min
+end

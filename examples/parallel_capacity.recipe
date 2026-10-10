@@ -1,0 +1,17 @@
+resource burner 2
+step task0
+ uses burner
+ duration 3 min
+end
+step task1
+ uses burner
+ duration 4 min
+end
+step task2
+ uses burner
+ duration 5 min
+end
+step task3
+ uses burner
+ duration 6 min
+end
