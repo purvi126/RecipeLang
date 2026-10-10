@@ -1,6 +1,27 @@
 """Read-only event simulation of the compiled schedule, using [start, end) times."""
 
 
+def resource_lanes(result):
+    """Assign each valid interval to a concrete unit for display only.
+
+    Units are interchangeable. Reusing the first free unit at each start time
+    preserves the schedule; an end at t frees a unit for a start at t.
+    """
+    rows = []
+    slots = sorted(result['schedule']['slots'], key=lambda s: (s['start'], s['end'], s['name']))
+    for resource, capacity in result['ast']['resources'].items():
+        units = [[] for _ in range(capacity)]
+        for slot in slots:
+            if resource not in slot['uses']:
+                continue
+            free = next((lane for lane in units if not lane or lane[-1]['end'] <= slot['start']), None)
+            if free is None:
+                raise ValueError(f'No free unit of {resource} for {slot["name"]}')
+            free.append(slot)
+        rows.extend({'resource': resource, 'unit': i+1, 'slots': lane} for i, lane in enumerate(units))
+    return rows
+
+
 def next_event(result, minute):
     events = {s[key] for s in result['schedule']['slots'] for key in ('start', 'end')}
     return min((t for t in events if t > minute), default=result['schedule']['optimized_minutes'])
