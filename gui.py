@@ -1,13 +1,12 @@
 """RecipeLang visual compiler workbench. Run: python3 gui.py"""
-import json
-import re
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 from collections import defaultdict
-from recipelang import compile_recipe, compile_stages, RecipeError
+from recipelang import compile_stages, RecipeError
 from exporters import export_all
 from editor import SourceEditor
+from simulation import next_event, simulation_state
 
 ROOT = Path(__file__).resolve().parent
 PALETTE = ('#4f46e5', '#0891b2', '#16a34a', '#d97706', '#be185d', '#7c3aed')
@@ -19,6 +18,8 @@ class App(tk.Tk):
         self.geometry('1250x790')
         self.minsize(950, 610)
         self.result = None
+        self.preview = {}
+        self.graph_zoom = 1.0
         self.compiling = False
         self.phase_job = None
         self.phase_stream = None
@@ -56,14 +57,35 @@ class App(tk.Tk):
             tab = ttk.Frame(self.notebook); self.notebook.add(tab, text=name); self.tabs[name] = tab
         self.stats = ttk.Label(self.tabs['Timeline'], text='Compile a recipe to generate a schedule.', wraplength=800)
         self.stats.pack(anchor='w', padx=8, pady=6)
+        simulation_bar = ttk.Frame(self.tabs['Timeline'])
+        simulation_bar.pack(fill='x', padx=7)
+        ttk.Button(simulation_bar, text='Next event', command=self.next_event).pack(side='left')
+        ttk.Label(simulation_bar, text='Playback:').pack(side='left', padx=(10, 3))
+        self.playback_mode = tk.StringVar(value='Events')
+        ttk.Combobox(simulation_bar, textvariable=self.playback_mode, values=['Events', 'Minutes'], state='readonly', width=9).pack(side='left')
         self.timeline = self.make_canvas(self.tabs['Timeline'])
         self.active = ttk.Label(self.tabs['Timeline'], text='', wraplength=800)
         self.active.pack(anchor='w', padx=8, pady=5)
+        self.waiting = self.make_table(self.tabs['Timeline'], ('Step', 'State', 'Reason'))
+        self.waiting.configure(height=5)
+        self.waiting.column('Reason', width=430)
         self.tokens = self.make_table(self.tabs['Tokens'], ('Type', 'Value', 'Line', 'Column'))
         self.ast = ttk.Treeview(self.tabs['AST'], show='tree')
         self.ast.pack(fill='both', expand=True, padx=7, pady=7)
         self.symbols = self.make_table(self.tabs['Symbol table'], ('Kind', 'Name', 'Value', 'Details'))
+        graph_bar = ttk.Frame(self.tabs['Dependency DAG'])
+        graph_bar.pack(fill='x', padx=7, pady=4)
+        for label, command in [('−', lambda: self.zoom_graph(1/1.25)), ('+', lambda: self.zoom_graph(1.25)),
+                               ('Fit', self.fit_graph), ('100%', self.reset_graph_zoom)]:
+            ttk.Button(graph_bar, text=label, command=command).pack(side='left', padx=2)
+        self.zoom_note = ttk.Label(graph_bar, text='100% • drag to pan')
+        self.zoom_note.pack(side='left', padx=8)
         self.graph = self.make_canvas(self.tabs['Dependency DAG'])
+        self.graph.bind('<ButtonPress-1>', lambda e: self.graph.scan_mark(e.x, e.y))
+        self.graph.bind('<B1-Motion>', lambda e: self.graph.scan_dragto(e.x, e.y, gain=1))
+        self.graph.bind('<Control-MouseWheel>', lambda e: self.zoom_graph(1.25 if e.delta > 0 else 1/1.25))
+        self.graph.bind('<Control-Button-4>', lambda e: self.zoom_graph(1.25))
+        self.graph.bind('<Control-Button-5>', lambda e: self.zoom_graph(1/1.25))
         self.schedule_table = self.make_table(self.tabs['Scheduler'], ('Step', 'Start', 'End', 'Duration', 'Resources', 'Dependencies'))
         self.schedule_note = ttk.Label(self.tabs['Scheduler'], text='', wraplength=800)
         self.schedule_note.pack(anchor='w', padx=8, pady=8)
@@ -132,11 +154,12 @@ class App(tk.Tk):
             self.phase_job = None
         self.compiling = False
         self.result = None
+        self.preview = {}
         self.minute = 0
         if hasattr(self, 'phases'):
             self.set_phases('Source changed — compile to refresh results.')
             self.phase_progress['value'] = 0
-            for table in (self.tokens, self.ast, self.symbols, self.schedule_table):
+            for table in (self.tokens, self.ast, self.symbols, self.schedule_table, self.waiting):
                 self.clear_table(table)
             self.schedule_note.configure(text='')
             self.stats.configure(text='Source changed — compile to refresh results.')
@@ -156,9 +179,15 @@ class App(tk.Tk):
             self.phase_job = None
         self.minute = 0
         self.result = None
+        self.preview = {}
         self.compiling = True
         self.phase_history = []
         self.phase_progress['value'] = 0
+        for table in (self.tokens, self.ast, self.symbols, self.schedule_table, self.waiting):
+            self.clear_table(table)
+        self.schedule_note.configure(text='')
+        self.active.configure(text='')
+        self.draw_timeline(); self.draw_graph(); self.update_clock()
         self.editor.tag_remove('error', '1.0', 'end')
         self.set_phases('Starting compiler pipeline...\n')
         self.stats.configure(text='Compiling: lexical analysis pending...')
@@ -189,6 +218,7 @@ class App(tk.Tk):
             self.compiling = False
             return
         self.phase_history.append('✓ ' + message)
+        self.preview.update(snapshot)
         self.phase_progress['value'] = len(self.phase_history)
         self.set_phases('\n'.join(self.phase_history) + f'\n\nCurrent phase: {phase}')
         self.stats.configure(text=f'Compiling: {phase} ({len(self.phase_history)}/8)')
@@ -199,6 +229,12 @@ class App(tk.Tk):
         if 'ast' in snapshot:
             for item in self.ast.get_children(): self.ast.delete(item)
             self.insert_ast('', 'Program', snapshot['ast'])
+        if phase == 'Symbol table':
+            self.populate_symbols(snapshot['ast'])
+        if phase == 'Dependency graph IR':
+            self.draw_graph()
+        if 'schedule' in snapshot:
+            self.populate_schedule(snapshot['schedule'], self.preview['ast'])
         if 'result' in snapshot:
             self.result = snapshot['result']
             self.compiling = False
@@ -215,24 +251,30 @@ class App(tk.Tk):
         for t in r['tokens']: self.tokens.insert('', 'end', values=(t['kind'], repr(t['value']) if t['kind']=='NEWLINE' else t['value'], t['line'], t.get('column', 1)))
         for item in self.ast.get_children(): self.ast.delete(item)
         self.insert_ast('', 'Program', r['ast'])
+        self.populate_symbols(r['ast'])
+        self.populate_schedule(s, r['ast'])
+        self.notebook.select(self.tabs['Timeline'])
+        self.draw_timeline(); self.draw_graph()
+
+    def populate_symbols(self, ast):
         self.clear_table(self.symbols)
-        for name, ing in r['ast']['ingredients'].items():
+        for name, ing in ast['ingredients'].items():
             self.symbols.insert('', 'end', values=('Ingredient', name, f'{ing["quantity"]:g} {ing["unit"]}', f'line {ing["line"]}'))
-        for name, count in r['ast']['resources'].items():
+        for name, count in ast['resources'].items():
             self.symbols.insert('', 'end', values=('Resource', name, count, 'capacity'))
-        for name, step in r['ast']['steps'].items():
+        for name, step in ast['steps'].items():
             self.symbols.insert('', 'end', values=('Step', name, f'{step["duration"]} min', f'needs: {", ".join(step["needs"]) or "none"}; uses: {", ".join(step["uses"]) or "none"}'))
+
+    def populate_schedule(self, s, ast):
         self.clear_table(self.schedule_table)
         for slot in s['slots']:
-            step = r['ast']['steps'][slot['name']]
+            step = ast['steps'][slot['name']]
             self.schedule_table.insert('', 'end', values=(slot['name'], slot['start'], slot['end'], slot['end']-slot['start'], ', '.join(slot['uses']) or '—', ', '.join(step['needs']) or '—'))
         proof = 'Optimality proven' if s['provably_optimal'] else 'Optimality not proven'
         resource_bounds = ', '.join(f'{r}: {bound}' for r, bound in s['resource_lower_bounds'].items()) or 'none'
         self.schedule_note.configure(text=f'Method: {s["method"]}. Priority orders evaluated: {s["priority_orders_evaluated"]}.\n'
                                     f'Critical path: {s["critical_path_lower_bound"]} min. Resource bounds: {resource_bounds}.\n'
                                     f'{proof}. Gap to lower bound: {s["optimality_gap_minutes"]} min.')
-        self.notebook.select(self.tabs['Timeline'])
-        self.draw_timeline(); self.draw_graph()
 
 
     def export_results(self):
@@ -278,8 +320,9 @@ class App(tk.Tk):
 
     def draw_graph(self):
         c = self.graph; c.delete('all')
-        if not self.result: return
-        steps = self.result['ast']['steps']; edges = self.result['ir']['edges']
+        data = self.result or self.preview
+        if 'ir' not in data: return
+        steps = data['ast']['steps']; edges = data['ir']['edges']
         levels = {}
         def level(name):
             if name not in levels: levels[name] = 1 + max((level(d) for d in steps[name]['needs']), default=-1)
@@ -287,29 +330,64 @@ class App(tk.Tk):
         for name in steps: level(name)
         groups = defaultdict(list)
         for name, depth in levels.items(): groups[depth].append(name)
-        width = max(c.winfo_width(), 680, 210*len(groups)+70)
-        height = max(c.winfo_height(), 400, max(map(len, groups.values()))*110+90)
+        # Keep layout in stable logical coordinates; resizing must not undo zoom.
+        width = max(300, 210*len(groups)+70)
+        height = max(200, max(map(len, groups.values()))*110+90)
+        self.graph_size = (width, height)
         pos = {}
         for depth, names in groups.items():
             for i, name in enumerate(names):
                 pos[name] = (105+depth*210, (height/(len(names)+1))*(i+1))
-        critical = set(self.result.get('critical_path_nodes', []))
+        critical = set(data.get('critical_path_nodes', []))
         for a, b in edges:
             x1,y1 = pos[a]; x2,y2 = pos[b]
             c.create_line(x1+70,y1,x2-70,y2,arrow='last',arrowshape=(12,14,6),fill='#dc2626' if a in critical and b in critical else '#64748b',width=3 if a in critical and b in critical else 2)
         for name, (x,y) in pos.items():
             c.create_rectangle(x-70,y-26,x+70,y+26,fill='#fee2e2' if name in critical else '#e0e7ff',outline='#dc2626' if name in critical else '#4338ca',width=3 if name in critical else 2)
-            c.create_text(x,y-7,text=name,font=('Arial',10,'bold'))
-            c.create_text(x,y+12,text=f'{steps[name]["duration"]} min',fill='#475569')
-        c.configure(scrollregion=(0,0,width,height))
+            c.create_text(x,y-7,text=name,font=('Arial',max(1, round(10*self.graph_zoom)),'bold'), width=135*self.graph_zoom)
+            c.create_text(x,y+12,text=f'{steps[name]["duration"]} min',font=('Arial',max(1, round(9*self.graph_zoom))),fill='#475569')
+        c.scale('all', 0, 0, self.graph_zoom, self.graph_zoom)
+        for item in c.find_all():
+            if c.type(item) == 'line':
+                c.itemconfigure(item, arrowshape=tuple(v*self.graph_zoom for v in (12,14,6)), width=max(1, 2*self.graph_zoom))
+        c.configure(scrollregion=(0,0,width*self.graph_zoom,height*self.graph_zoom))
+        self.zoom_note.configure(text=f'{self.graph_zoom:.0%} • drag to pan')
+
+    def zoom_graph(self, factor):
+        self.graph_zoom = min(4.0, max(.05, self.graph_zoom*factor))
+        self.draw_graph()
+        return 'break'
+
+    def reset_graph_zoom(self):
+        self.graph_zoom = 1.0
+        self.draw_graph()
+        self.graph.xview_moveto(0); self.graph.yview_moveto(0)
+
+    def fit_graph(self):
+        if not (self.result or self.preview).get('ir'): return
+        self.draw_graph()
+        width, height = self.graph_size
+        self.graph_zoom = max(.001, min((max(1, self.graph.winfo_width()-12))/width,
+                                       (max(1, self.graph.winfo_height()-12))/height, 2.0))
+        self.draw_graph()
+        self.graph.xview_moveto(0); self.graph.yview_moveto(0)
 
     def update_clock(self):
         self.clock.configure(text=f'Simulation {self.minute:02d}:00')
+        self.clear_table(self.waiting)
         if not self.result: return
         slots = self.result['schedule']['slots']
         running = [x['name'] for x in slots if x['start'] <= self.minute < x['end']]
         done = [x['name'] for x in slots if x['end'] <= self.minute]
         self.active.configure(text=f'Running: {", ".join(running) or "none"}    |    Completed: {", ".join(done) or "none"}')
+        for row in simulation_state(self.result, self.minute):
+            self.waiting.insert('', 'end', values=(row['name'], row['status'], row['reason']))
+
+    def next_event(self):
+        if not self.result: return
+        self.minute = next_event(self.result, self.minute)
+        self.draw_timeline()
+        if self.minute >= self.result['schedule']['optimized_minutes']: self.pause()
 
     def next_minute(self):
         if not self.result: return
@@ -323,8 +401,12 @@ class App(tk.Tk):
         self.playing = True; self.tick()
 
     def tick(self):
+        self.after_id = None
         if not self.playing: return
-        self.next_minute()
+        if self.playback_mode.get() == 'Events':
+            self.next_event()
+        else:
+            self.next_minute()
         if self.playing:
             delay = int(1000/int(self.speed.get().rstrip('×')))
             self.after_id = self.after(delay, self.tick)
