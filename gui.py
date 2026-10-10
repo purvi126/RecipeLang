@@ -210,7 +210,7 @@ class App(tk.Tk):
     def populate_compilation(self):
         r = self.result; s = r['schedule']
         self.set_phases('\n'.join('✓ ' + phase for phase in r['phases']))
-        self.stats.configure(text=f'Sequential {s["sequential_minutes"]} min  •  Scheduled {s["optimized_minutes"]} min  •  Saved {s["minutes_saved"]} min  •  Critical-path lower bound {s["critical_path_lower_bound"]} min')
+        self.stats.configure(text=f'Sequential {s["sequential_minutes"]} min  •  Scheduled {s["optimized_minutes"]} min  •  Saved {s["minutes_saved"]} min  •  Lower bound {s["lower_bound"]} min')
         self.clear_table(self.tokens)
         for t in r['tokens']: self.tokens.insert('', 'end', values=(t['kind'], repr(t['value']) if t['kind']=='NEWLINE' else t['value'], t['line'], t.get('column', 1)))
         for item in self.ast.get_children(): self.ast.delete(item)
@@ -226,7 +226,11 @@ class App(tk.Tk):
         for slot in s['slots']:
             step = r['ast']['steps'][slot['name']]
             self.schedule_table.insert('', 'end', values=(slot['name'], slot['start'], slot['end'], slot['end']-slot['start'], ', '.join(slot['uses']) or '—', ', '.join(step['needs']) or '—'))
-        self.schedule_note.configure(text=f'Method: {s["method"]}. Priority orders evaluated: {s["priority_orders_evaluated"]}. Critical path is a dependency-only lower bound, not a proof of global optimality.')
+        proof = 'Optimality proven' if s['provably_optimal'] else 'Optimality not proven'
+        resource_bounds = ', '.join(f'{r}: {bound}' for r, bound in s['resource_lower_bounds'].items()) or 'none'
+        self.schedule_note.configure(text=f'Method: {s["method"]}. Priority orders evaluated: {s["priority_orders_evaluated"]}.\n'
+                                    f'Critical path: {s["critical_path_lower_bound"]} min. Resource bounds: {resource_bounds}.\n'
+                                    f'{proof}. Gap to lower bound: {s["optimality_gap_minutes"]} min.')
         self.notebook.select(self.tabs['Timeline'])
         self.draw_timeline(); self.draw_graph()
 

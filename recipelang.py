@@ -2,7 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from collections import defaultdict
-from itertools import permutations, combinations
+from itertools import combinations
 import argparse, json, re
 from schedule_validator import validate_schedule
 
@@ -209,7 +209,55 @@ def place_in_order(recipe, order):
     return sorted(slots.values(), key=lambda s: (s.start, s.end, s.name))
 
 
-def exact_schedule(recipe, state_limit=120000):
+def scheduling_metrics(recipe):
+    """Dependency windows and admissible capacity bounds, in whole minutes."""
+    order = topological(recipe)
+    earliest, tail = {}, {}
+    successors = {name: [] for name in order}
+    for name in order:
+        step = recipe.steps[name]
+        earliest[name] = max((earliest[d] + recipe.steps[d].duration for d in step.needs), default=0)
+        for dep in step.needs:
+            successors[dep].append(name)
+    for name in reversed(order):
+        tail[name] = recipe.steps[name].duration + max((tail[n] for n in successors[name]), default=0)
+    cp = max(tail.values())
+    workload, resource_bounds = {}, {}
+    for resource, capacity in recipe.resources.items():
+        users = [n for n in order if resource in recipe.steps[n].uses]
+        work = sum(recipe.steps[n].duration for n in users)
+        workload[resource] = (work + capacity - 1) // capacity
+        # Every user is released no earlier than min_release and must finish
+        # before makespan - min_tail. Packing all work in that window is necessary.
+        resource_bounds[resource] = (min(earliest[n] for n in users) + workload[resource]
+                                    + min(tail[n] - recipe.steps[n].duration for n in users)) if users else 0
+    return {'earliest_start': earliest, 'remaining_path': tail,
+            'slack': {n: cp-earliest[n]-tail[n] for n in order},
+            'critical_path': cp, 'resource_workload': workload,
+            'resource_bounds': resource_bounds,
+            'lower_bound': max(cp, max(resource_bounds.values(), default=0))}
+
+
+def priority_order(recipe, metrics, rule):
+    """Choose only dependency-ready steps, with deterministic tie breaking."""
+    remaining, order = set(recipe.steps), []
+    def key(name):
+        step = recipe.steps[name]
+        tail = metrics['remaining_path'][name]
+        pressure = sum(metrics['resource_workload'][r] for r in step.uses)
+        return {'critical_path': (-tail, -pressure, name),
+                'least_slack': (metrics['slack'][name], -tail, name),
+                'resource_pressure': (-pressure, -tail, name),
+                'longest_duration': (-step.duration, -tail, name)}[rule]
+    while remaining:
+        ready = [n for n in remaining if all(d not in remaining for d in recipe.steps[n].needs)]
+        name = min(ready, key=key)
+        order.append(name)
+        remaining.remove(name)
+    return order
+
+
+def exact_schedule(recipe, state_limit=120000, incumbent=None):
     """Exact event-time branch-and-bound for small nonpreemptive RCPSP instances.
 
     At every completion event, branch over feasible subsets of newly ready jobs,
@@ -217,11 +265,13 @@ def exact_schedule(recipe, state_limit=120000):
     non-delay alternatives. Returns None on state-budget exhaustion.
     """
     names = tuple(sorted(recipe.steps))
-    best = None
-    best_finish = float('inf')
+    best = incumbent if incumbent is not None else [asdict(s) for s in place_in_order(recipe, topological(recipe))]
+    best_finish = max(s['end'] for s in best)
     explored = 0
     seen = {}
     capacities = recipe.resources
+    metrics = scheduling_metrics(recipe)
+    order = topological(recipe)
 
     class BudgetExceeded(Exception): pass
 
@@ -235,12 +285,30 @@ def exact_schedule(recipe, state_limit=120000):
                 best = [dict(x) for x in slots]
             return
         if t >= best_finish: return
+        # Remaining durations include only the unspent part of running jobs.
+        # These bounds ignore contention/precedence respectively, so pruning
+        # cannot remove a schedule better than the feasible incumbent.
+        finish = {}
+        for name in order:
+            if name in done:
+                finish[name] = t
+            elif name in running:
+                finish[name] = running[name]
+            else:
+                finish[name] = max([t] + [finish[d] for d in recipe.steps[name].needs]) + recipe.steps[name].duration
+        bound = max(metrics['lower_bound'], max(finish.values()))
+        for resource, capacity in capacities.items():
+            work = sum((running[n]-t if n in running else recipe.steps[n].duration)
+                       for n in names if n not in done and resource in recipe.steps[n].uses)
+            bound = max(bound, t + (work+capacity-1)//capacity)
+        if bound >= best_finish: return
         key = (tuple(sorted(done)), tuple(sorted((n, end-t) for n, end in running.items())))
         if seen.get(key, float('inf')) <= t: return
         seen[key] = t
         active = set(running)
-        ready = [n for n in names if n not in done and n not in active
-                 and all(dep in done for dep in recipe.steps[n].needs)]
+        ready = sorted((n for n in names if n not in done and n not in active
+                        and all(dep in done for dep in recipe.steps[n].needs)),
+                       key=lambda n: (-metrics['remaining_path'][n], n))
         used = {r: sum(r in recipe.steps[n].uses for n in active) for r in capacities}
         subsets = []
         for count in range(len(ready), -1, -1):
@@ -271,28 +339,19 @@ def schedule(recipe):
     n = len(recipe.steps)
     order = topological(recipe)
     heuristic = place_in_order(recipe, order)
-    tested = 1
-    if n <= 8:
-        # Improve the heuristic incumbent by enumerating topological priority lists.
-        best = heuristic
-        def explore(prefix, remaining):
-            nonlocal best, tested
-            if not remaining:
-                candidate = place_in_order(recipe, prefix)
-                tested += 1
-                if max(s.end for s in candidate) < max(s.end for s in best): best = candidate
-                return
-            for name in sorted(remaining):
-                if all(d in prefix for d in recipe.steps[name].needs):
-                    explore(prefix + [name], remaining - {name})
-        explore([], set(recipe.steps))
-        heuristic = best
+    metrics = scheduling_metrics(recipe)
+    tested, chosen = 1, 'source_topological'
+    for rule in ('critical_path', 'least_slack', 'resource_pressure', 'longest_duration'):
+        candidate = place_in_order(recipe, priority_order(recipe, metrics, rule))
+        tested += 1
+        if max(s.end for s in candidate) < max(s.end for s in heuristic):
+            heuristic, chosen = candidate, rule
     slots = [asdict(s) for s in heuristic]
-    method = 'topological earliest-feasible heuristic'
-    optimal = False
+    method = f'priority portfolio earliest-feasible heuristic ({chosen})'
+    optimal = max(s['end'] for s in slots) == metrics['lower_bound']
     states = 0
-    if n <= 8:
-        exact, states = exact_schedule(recipe)
+    if n <= 8 and not optimal:
+        exact, states = exact_schedule(recipe, incumbent=slots)
         if exact is not None:
             slots = exact
             method = 'exact event-time exhaustive search (provably optimal for this instance)'
@@ -301,9 +360,17 @@ def schedule(recipe):
             method += ' (exact search exceeded state budget)'
     baseline = sum(s.duration for s in recipe.steps.values())
     finish = max(s['end'] for s in slots)
+    if finish == metrics['lower_bound']:
+        method += ' (matches proven lower bound)'
     return {'slots': slots, 'sequential_minutes': baseline, 'optimized_minutes': finish,
             'minutes_saved': baseline-finish, 'improvement_percent': round(100*(baseline-finish)/baseline, 2),
             'critical_path_lower_bound': critical_path(recipe), 'method': method,
+            'resource_workload_lower_bounds': metrics['resource_workload'],
+            'resource_lower_bounds': metrics['resource_bounds'],
+            'lower_bound': metrics['lower_bound'], 'optimality_gap_minutes': finish-metrics['lower_bound'],
+            'priority_rule': chosen, 'step_priorities': {name: {
+                'remaining_path': metrics['remaining_path'][name], 'slack': metrics['slack'][name]
+            } for name in order},
             'provably_optimal': optimal, 'exact_states_evaluated': states,
             'priority_orders_evaluated': tested}
 
