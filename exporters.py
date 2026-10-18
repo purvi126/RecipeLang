@@ -1,5 +1,5 @@
 
-"""Portable RecipeLang compilation exports; PNG requires no third-party packages."""
+"""RecipeLang JSON and CSV exports, plus labeled PNG charts using Pillow."""
 import csv
 import json
 import struct
